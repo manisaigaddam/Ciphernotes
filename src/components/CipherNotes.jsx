@@ -983,8 +983,31 @@ export const NotepadApp = () => {
   const formatDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
   const selectedNote = notes.find(n => n.id === selectedNoteId);
   
-  if (!isConnected) return <Container><EmptyState><div className="icon">🔌</div><h3>Connect Wallet</h3></EmptyState></Container>;
-  if (!isSupportedNetwork) return <Container><EmptyState><div className="icon">⚠️</div><h3>Switch to Sepolia</h3></EmptyState></Container>;
+  if (!isConnected) return (
+    <Container>
+      <EmptyState>
+        <div className="icon">🔌</div>
+        <h3>CipherNotes Login</h3>
+        <div style={{ marginTop: 16 }}>
+          <ConnectButton />
+        </div>
+      </EmptyState>
+    </Container>
+  );
+
+  if (!isSupportedNetwork) return (
+    <Container>
+      <EmptyState>
+        <div className="icon">⚠️</div>
+        <h3>Wrong Network</h3>
+        <p>Please switch to Sepolia</p>
+        <div style={{ marginTop: 16 }}>
+          <ConnectButton />
+        </div>
+      </EmptyState>
+    </Container>
+  );
+
   if (!contractAddress) return <Container><EmptyState><div className="icon">📝</div><h3>Contract not configured</h3><p style={{ fontFamily: 'monospace', fontSize: 10, marginTop: 8 }}>VITE_CIPHERNOTES_ADDRESS=0x...</p></EmptyState></Container>;
   
   return (

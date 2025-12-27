@@ -1,3 +1,4 @@
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useCallback, useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { useAccount } from 'wagmi';
@@ -86,12 +87,14 @@ const DEFAULT_CATEGORIES = ['Personal', 'Work', 'Ideas', 'Todo', 'Archive', 'Imp
 // ===================== STYLED COMPONENTS =====================
 
 const Container = styled.div`
-  height: 100%;
+  height: 100vh;
+  width: 100vw;
   display: flex;
   flex-direction: column;
   background: #ECE9D8;
   font-family: 'Tahoma', sans-serif;
   position: relative;
+  overflow: hidden;
 `;
 
 const MenuBar = styled.div`
@@ -99,8 +102,10 @@ const MenuBar = styled.div`
   border-bottom: 1px solid #ACA899;
   padding: 2px 4px;
   display: flex;
+  align-items: center;
   gap: 2px;
   font-size: 12px;
+  flex-shrink: 0;
 `;
 
 const MenuItem = styled.button`
@@ -1048,9 +1053,14 @@ export const NotepadApp = () => {
       )}
       
       <MenuBar>
-        <MenuItem onClick={handleNewNote}>New</MenuItem>
-        <MenuItem onClick={() => setShowLogs(!showLogs)}>{showLogs ? 'Hide' : 'Show'} Logs</MenuItem>
-        <MenuItem onClick={() => { loadNotes(); loadSharedNotes(); }}>Refresh</MenuItem>
+        <div style={{ display: 'flex', gap: '2px' }}>
+          <MenuItem onClick={handleNewNote}>New</MenuItem>
+          <MenuItem onClick={() => setShowLogs(!showLogs)}>{showLogs ? 'Hide' : 'Show'} Logs</MenuItem>
+          <MenuItem onClick={() => { loadNotes(); loadSharedNotes(); }}>Refresh</MenuItem>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+          <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
+        </div>
       </MenuBar>
       
       <MainContent>

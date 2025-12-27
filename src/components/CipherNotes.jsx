@@ -1,5 +1,5 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { FileText, Lock, Plus, Send, Share2, Shield, Trash2, Unlock, X, Zap } from 'lucide-react';
+import { FileText, FolderOpen, Lock, Plus, Search, Send, Share2, Shield, Tag, Trash2, Unlock, Users, X, Zap } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { useAccount } from 'wagmi';
@@ -149,7 +149,7 @@ const MainLayout = styled.div`
 `;
 
 const Sidebar = styled.aside`
-  width: 320px;
+  width: 340px;
   background: rgba(0, 0, 0, 0.2);
   border-right: 1px solid rgba(131, 110, 249, 0.1);
   display: flex;
@@ -157,21 +157,93 @@ const Sidebar = styled.aside`
   
   @media (max-width: 768px) {
     width: 100%;
-    max-height: 200px;
+    max-height: 250px;
   }
 `;
 
 const SidebarHeader = styled.div`
   padding: 16px;
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 1px solid rgba(131, 110, 249, 0.1);
+`;
+
+const TabBar = styled.div`
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  border-radius: 10px;
+`;
+
+const Tab = styled.button`
+  flex: 1;
+  padding: 8px 12px;
+  background: ${props => props.$active ? 'linear-gradient(135deg, #836EF9 0%, #6366f1 100%)' : 'transparent'};
+  border: none;
+  border-radius: 8px;
+  color: ${props => props.$active ? 'white' : '#94a3b8'};
+  font-size: 0.8rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+  
+  &:hover {
+    background: ${props => props.$active ? '' : 'rgba(131, 110, 249, 0.1)'};
+  }
+`;
+
+const SearchBar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(131, 110, 249, 0.2);
+  border-radius: 8px;
+  
+  input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    font-size: 0.9rem;
+    
+    &:focus { outline: none; }
+    &::placeholder { color: #64748b; }
+  }
+  
+  svg { color: #64748b; }
+`;
+
+const CategoryFilter = styled.div`
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+`;
+
+const CategoryPill = styled.button`
+  padding: 4px 10px;
+  background: ${props => props.$active ? 'rgba(131, 110, 249, 0.3)' : 'rgba(255, 255, 255, 0.05)'};
+  border: 1px solid ${props => props.$active ? '#836EF9' : 'rgba(131, 110, 249, 0.2)'};
+  border-radius: 12px;
+  color: ${props => props.$active ? '#a5b4fc' : '#94a3b8'};
+  font-size: 0.7rem;
+  transition: all 0.2s;
+  
+  &:hover {
+    background: rgba(131, 110, 249, 0.2);
+  }
+`;
+
+const HeaderRow = styled.div`
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(131, 110, 249, 0.1);
-  
-  h3 {
-    font-size: 0.9rem;
-    color: #94a3b8;
-  }
 `;
 
 const NewNoteBtn = styled.button`
@@ -229,6 +301,22 @@ const NoteItem = styled.div`
   .meta {
     font-size: 0.75rem;
     color: #64748b;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .category-tag {
+    padding: 2px 6px;
+    background: rgba(131, 110, 249, 0.2);
+    border-radius: 4px;
+    font-size: 0.65rem;
+    color: #a5b4fc;
+  }
+  
+  .shared-by {
+    color: #10b981;
+    font-style: italic;
   }
 `;
 
@@ -270,6 +358,26 @@ const TitleInput = styled.input`
   }
 `;
 
+const CategorySelect = styled.select`
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(131, 110, 249, 0.3);
+  border-radius: 8px;
+  color: #f8fafc;
+  font-size: 0.85rem;
+  cursor: pointer;
+  
+  &:focus {
+    outline: none;
+    border-color: #836EF9;
+  }
+  
+  option {
+    background: #1a1a2e;
+    color: #f8fafc;
+  }
+`;
+
 const ActionBtn = styled.button`
   display: flex;
   align-items: center;
@@ -277,10 +385,12 @@ const ActionBtn = styled.button`
   padding: 10px 16px;
   background: ${props => props.$primary 
     ? 'linear-gradient(135deg, #836EF9 0%, #6366f1 100%)' 
+    : props.$danger 
+    ? 'rgba(239, 68, 68, 0.2)' 
     : 'rgba(255, 255, 255, 0.05)'};
-  border: 1px solid ${props => props.$primary ? 'transparent' : 'rgba(131, 110, 249, 0.3)'};
+  border: 1px solid ${props => props.$primary ? 'transparent' : props.$danger ? 'rgba(239, 68, 68, 0.5)' : 'rgba(131, 110, 249, 0.3)'};
   border-radius: 8px;
-  color: white;
+  color: ${props => props.$danger ? '#ef4444' : 'white'};
   font-size: 0.85rem;
   font-weight: 500;
   
@@ -310,7 +420,7 @@ const ContentTextarea = styled.textarea`
   border-radius: 12px;
   color: #f8fafc;
   font-size: 1rem;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Inter', sans-serif;
   line-height: 1.6;
   resize: none;
   
@@ -407,6 +517,7 @@ const ModalContent = styled.div`
   border-radius: 16px;
   padding: 24px;
   min-width: 400px;
+  max-width: 500px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
 `;
 
@@ -461,10 +572,10 @@ const LogPanel = styled.div`
   background: rgba(0, 0, 0, 0.5);
   border-top: 1px solid rgba(131, 110, 249, 0.2);
   padding: 12px 24px;
-  max-height: 120px;
+  max-height: 100px;
   overflow-y: auto;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   
   .log-entry {
     padding: 2px 0;
@@ -514,6 +625,24 @@ const FeatureCard = styled.div`
   }
 `;
 
+const FHEInfoBox = styled.div`
+  background: rgba(131, 110, 249, 0.1);
+  border: 1px solid rgba(131, 110, 249, 0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 0.8rem;
+  color: #a5b4fc;
+  
+  strong {
+    color: #836EF9;
+  }
+`;
+
+// ===================== DEFAULT CATEGORIES =====================
+
+const DEFAULT_CATEGORIES = ['Personal', 'Work', 'Ideas', 'Important', 'Archive', 'Travel', 'Finance', 'Health'];
+
 // ===================== MAIN COMPONENT =====================
 
 const CipherNotes = () => {
@@ -521,7 +650,7 @@ const CipherNotes = () => {
   const { 
     isReady, isSupportedNetwork, status,
     createEncryptedInput, createEncryptedInput4x64, 
-    requestDecryption4x64,
+    requestDecryption, requestDecryption4x64,
     getContract, ethersSigner,
   } = useFhevm();
   
@@ -530,6 +659,7 @@ const CipherNotes = () => {
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [selectedNoteCategory, setSelectedNoteCategory] = useState(0);
   
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -538,6 +668,21 @@ const CipherNotes = () => {
   const [isNewNote, setIsNewNote] = useState(false);
   const [logs, setLogs] = useState([]);
   const [isDecrypted, setIsDecrypted] = useState(false);
+  
+  // Tab state
+  const [activeTab, setActiveTab] = useState('my'); // 'my' | 'shared'
+  
+  // Search & filter
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState(null); // null = all
+  
+  // Categories
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [noteCategoryMap, setNoteCategoryMap] = useState({}); // noteId -> categoryIndex
+  
+  // Shared notes
+  const [sharedNotes, setSharedNotes] = useState([]);
+  const [selectedSharedNote, setSelectedSharedNote] = useState(null); // {owner, noteId}
   
   // Sharing modal
   const [showShareModal, setShowShareModal] = useState(false);
@@ -550,13 +695,15 @@ const CipherNotes = () => {
   const contractAddress = CONTRACT_ADDRESSES?.CipherNotes;
   
   const addLog = (message, type = 'info') => {
-    setLogs(prev => [...prev.slice(-20), { message, type, time: new Date().toLocaleTimeString() }]);
+    setLogs(prev => [...prev.slice(-15), { message, type, time: new Date().toLocaleTimeString() }]);
     console.log(`[CipherNotes ${type}]`, message);
   };
   
   useEffect(() => {
     if (isConnected && isReady && contractAddress) {
       loadNotes();
+      loadSharedNotes();
+      loadCategoryNames();
     }
   }, [isConnected, isReady, contractAddress]);
   
@@ -597,28 +744,87 @@ const CipherNotes = () => {
     }
   };
   
+  const loadSharedNotes = async () => {
+    try {
+      const contract = getContractInstance();
+      if (!contract) return;
+      
+      addLog('Fetching shared notes...');
+      const result = await contract.getReceivedNotes();
+      
+      const shared = [];
+      for (let i = 0; i < result.owners.length; i++) {
+        if (result.titles[i]) {
+          shared.push({
+            owner: result.owners[i],
+            noteId: Number(result.noteIds[i]),
+            title: result.titles[i],
+          });
+        }
+      }
+      setSharedNotes(shared);
+      addLog(`Found ${shared.length} shared notes`, 'success');
+    } catch (error) {
+      addLog(`Load shared failed: ${error.message}`, 'error');
+    }
+  };
+  
+  const loadCategoryNames = async () => {
+    try {
+      const contract = getContractInstance();
+      if (!contract) return;
+      
+      const names = await contract.getCategoryNames(address);
+      const filtered = names.map((n, i) => n || DEFAULT_CATEGORIES[i] || `Category ${i + 1}`);
+      setCategories(filtered);
+    } catch (error) {
+      addLog(`Load categories failed: ${error.message}`, 'error');
+    }
+  };
+  
   // ===================== NOTE SELECTION =====================
   
   const selectNote = async (note) => {
     setSelectedNoteId(note.id);
+    setSelectedSharedNote(null);
     setTitle(note.title);
     setIsNewNote(false);
     setIsDecrypted(false);
+    setSelectedNoteCategory(noteCategoryMap[note.id] || 0);
     
-    if (contentCache[`my-${note.id}`]) {
-      setContent(contentCache[`my-${note.id}`]);
+    const cacheKey = `my-${note.id}`;
+    if (contentCache[cacheKey]) {
+      setContent(contentCache[cacheKey]);
       setIsDecrypted(true);
     } else {
       setContent('[🔐 Encrypted - Click "Decrypt" to view]');
     }
   };
   
+  const selectSharedNote = async (shared) => {
+    setSelectedSharedNote(shared);
+    setSelectedNoteId(null);
+    setTitle(shared.title);
+    setIsNewNote(false);
+    setIsDecrypted(false);
+    
+    const cacheKey = `shared-${shared.owner}-${shared.noteId}`;
+    if (contentCache[cacheKey]) {
+      setContent(contentCache[cacheKey]);
+      setIsDecrypted(true);
+    } else {
+      setContent('[🔐 Shared Note - Click "Decrypt" to view]');
+    }
+  };
+  
   const handleNewNote = () => {
     setSelectedNoteId(null);
+    setSelectedSharedNote(null);
     setTitle('');
     setContent('');
     setIsNewNote(true);
     setIsDecrypted(true);
+    setSelectedNoteCategory(0);
     addLog('Creating new note...');
   };
   
@@ -653,7 +859,7 @@ const CipherNotes = () => {
         const ipfsCid = await uploadToIPFS(encryptedContent);
         addLog(`IPFS CID: ${ipfsCid.toString().slice(0, 20)}... ✓`, 'success');
         
-        setLoadingStep('4/5: FHE encrypting key...');
+        setLoadingStep('4/5: FHE encrypting key chunks...');
         addLog('FHE encrypting 4 key chunks (256-bit AES key)...');
         
         const k1Value = keyChunkToBigInt(keyBytes, 0);
@@ -720,10 +926,9 @@ const CipherNotes = () => {
         await loadNotes();
         setIsNewNote(false);
         setSelectedNoteId(actualNoteId);
-        setIsDecrypted(false);
-        setContent('[🔒 Encrypted - Click Decrypt to view and edit]');
         
       } else {
+        // Just update title
         setLoadingMessage('Updating title...');
         addLog('Updating title...');
         const tx = await contract.updateTitle(selectedNoteId, title);
@@ -746,21 +951,41 @@ const CipherNotes = () => {
     const contract = getContractInstance();
     if (!contract) return;
     
+    const isShared = selectedSharedNote !== null;
+    
     try {
       setIsLoading(true);
       setLoadingMessage('Decrypting...');
       
-      setLoadingStep('1/4: Fetching CID from contract...');
-      addLog('Fetching IPFS CID from contract...');
+      let ipfsCid, keyHandles, cacheKey;
       
-      const cidBytes = await contract.getNoteCID(selectedNoteId);
-      const chunks = await contract.getNoteKeyChunks(selectedNoteId);
-      const keyHandles = [chunks[0], chunks[1], chunks[2], chunks[3]];
-      const cacheKey = `my-${selectedNoteId}`;
+      if (isShared) {
+        setLoadingStep('1/4: Fetching shared note data...');
+        addLog(`Fetching shared note from ${selectedSharedNote.owner.slice(0, 8)}...`);
+        
+        const cidBytes = await contract.getSharedNoteCID(selectedSharedNote.owner, selectedSharedNote.noteId);
+        const keyBytes32 = await contract.getSharedNoteKeyChunks(selectedSharedNote.owner, selectedSharedNote.noteId);
+        
+        keyHandles = keyBytes32; // bytes32 handles for shared
+        cacheKey = `shared-${selectedSharedNote.owner}-${selectedSharedNote.noteId}`;
+        
+        ipfsCid = new TextDecoder().decode(
+          new Uint8Array(cidBytes.slice(2).match(/.{1,2}/g).map(b => parseInt(b, 16)))
+        );
+      } else {
+        setLoadingStep('1/4: Fetching CID from contract...');
+        addLog('Fetching IPFS CID from contract...');
+        
+        const cidBytes = await contract.getNoteCID(selectedNoteId);
+        const chunks = await contract.getNoteKeyChunks(selectedNoteId);
+        keyHandles = [chunks[0], chunks[1], chunks[2], chunks[3]];
+        cacheKey = `my-${selectedNoteId}`;
+        
+        ipfsCid = new TextDecoder().decode(
+          new Uint8Array(cidBytes.slice(2).match(/.{1,2}/g).map(b => parseInt(b, 16)))
+        );
+      }
       
-      const ipfsCid = new TextDecoder().decode(
-        new Uint8Array(cidBytes.slice(2).match(/.{1,2}/g).map(b => parseInt(b, 16)))
-      );
       addLog(`CID: ${ipfsCid.slice(0, 20)}... ✓`, 'success');
       
       setLoadingStep('2/4: FHE decrypting key chunks...');
@@ -814,6 +1039,41 @@ const CipherNotes = () => {
     }
   };
   
+  // ===================== CATEGORY FUNCTION =====================
+  
+  const handleSetCategory = async (categoryIndex) => {
+    if (selectedNoteId === null || !isReady) return;
+    
+    const contract = getContractInstance();
+    if (!contract) return;
+    
+    try {
+      setIsLoading(true);
+      setLoadingMessage('Setting category...');
+      addLog(`Setting encrypted category ${categoryIndex} for note ${selectedNoteId}...`);
+      
+      // Create encrypted category (euint8)
+      const encrypted = await createEncryptedInput(BigInt(categoryIndex), contractAddress, 'uint8');
+      
+      const tx = await contract.setNoteCategory(
+        selectedNoteId,
+        encrypted.handles[0],
+        encrypted.inputProof
+      );
+      
+      addLog(`TX: ${tx.hash}`);
+      await tx.wait();
+      
+      setNoteCategoryMap(prev => ({ ...prev, [selectedNoteId]: categoryIndex }));
+      setSelectedNoteCategory(categoryIndex);
+      addLog('Category set ✓', 'success');
+    } catch (error) {
+      addLog(`Set category failed: ${error.message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   // ===================== SHARE FUNCTION =====================
   
   const handleShare = async () => {
@@ -853,7 +1113,7 @@ const CipherNotes = () => {
       
       addLog(`Sharing note ${selectedNoteId} with ${shareRecipient.slice(0, 8)}...`);
       
-      setLoadingStep('1/2: Encrypting key for recipient...');
+      setLoadingStep('1/2: FHE encrypting key for recipient...');
       
       const k1Value = keyChunkToBigInt(keyBytes, 0);
       const k2Value = keyChunkToBigInt(keyBytes, 8);
@@ -921,11 +1181,40 @@ const CipherNotes = () => {
     }
   };
   
+  // ===================== FILTERING =====================
+  
+  const filteredNotes = notes.filter(note => {
+    // Search filter (only on decrypted/cached content + title)
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const titleMatch = note.title.toLowerCase().includes(query);
+      const contentMatch = contentCache[`my-${note.id}`]?.toLowerCase().includes(query);
+      if (!titleMatch && !contentMatch) return false;
+    }
+    
+    // Category filter
+    if (categoryFilter !== null) {
+      const noteCategory = noteCategoryMap[note.id];
+      if (noteCategory !== categoryFilter) return false;
+    }
+    
+    return true;
+  });
+  
+  const filteredSharedNotes = sharedNotes.filter(shared => {
+    if (searchQuery) {
+      return shared.title.toLowerCase().includes(searchQuery.toLowerCase());
+    }
+    return true;
+  });
+  
   // ===================== RENDER =====================
   
   const formatDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString('en-US', { 
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
   }) : '';
+  
+  const formatAddress = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
   
   // Welcome screen for not connected
   if (!isConnected) {
@@ -954,19 +1243,25 @@ const CipherNotes = () => {
               <FeatureCard>
                 <div className="icon"><Lock size={24} /></div>
                 <h4>End-to-End Encryption</h4>
-                <p>Notes are encrypted with AES-256, and the key is stored on-chain using FHE.</p>
+                <p>Notes are encrypted with AES-256, and the key is stored on-chain using FHE (4x euint64 chunks).</p>
               </FeatureCard>
               
               <FeatureCard>
                 <div className="icon"><Share2 size={24} /></div>
                 <h4>Secure Sharing</h4>
-                <p>Share notes with other addresses. FHE re-encryption ensures only recipients can decrypt.</p>
+                <p>Share notes via FHE re-encryption. Contract uses FHE.allow() to grant decrypt permission to recipients.</p>
+              </FeatureCard>
+              
+              <FeatureCard>
+                <div className="icon"><Tag size={24} /></div>
+                <h4>Encrypted Categories</h4>
+                <p>Organize notes with euint8 encrypted categories. Even category assignments are private!</p>
               </FeatureCard>
               
               <FeatureCard>
                 <div className="icon"><Zap size={24} /></div>
-                <h4>IPFS Storage</h4>
-                <p>Encrypted content stored on IPFS via Storacha. On-chain only stores FHE-encrypted keys.</p>
+                <h4>IPFS + On-Chain</h4>
+                <p>Encrypted content on IPFS via Storacha. Only FHE-encrypted key handles stored on-chain.</p>
               </FeatureCard>
             </FeatureCards>
           </EmptyState>
@@ -1021,6 +1316,8 @@ const CipherNotes = () => {
     );
   }
   
+  const currentNoteIsShared = selectedSharedNote !== null;
+  
   return (
     <Container>
       {isLoading && (
@@ -1040,6 +1337,12 @@ const CipherNotes = () => {
                 <X size={18} />
               </button>
             </ModalHeader>
+            
+            <FHEInfoBox>
+              <strong>FHE Re-encryption:</strong> The AES key will be FHE-encrypted for the recipient. 
+              The contract calls <code>FHE.allow(keyHandle, recipient)</code> to grant decrypt permission.
+            </FHEInfoBox>
+            
             <p style={{ fontSize: '0.9rem', marginBottom: '16px', color: '#94a3b8' }}>
               Enter recipient's Ethereum address:
             </p>
@@ -1078,10 +1381,65 @@ const CipherNotes = () => {
       <MainLayout>
         <Sidebar>
           <SidebarHeader>
-            <h3>My Notes ({notes.length})</h3>
-            <NewNoteBtn onClick={handleNewNote} disabled={!isReady}>
-              <Plus size={16} /> New
-            </NewNoteBtn>
+            {/* Tab Switcher */}
+            <TabBar>
+              <Tab $active={activeTab === 'my'} onClick={() => setActiveTab('my')}>
+                <FolderOpen size={14} />
+                My Notes ({notes.length})
+              </Tab>
+              <Tab $active={activeTab === 'shared'} onClick={() => setActiveTab('shared')}>
+                <Users size={14} />
+                Shared ({sharedNotes.length})
+              </Tab>
+            </TabBar>
+            
+            {/* Search Bar */}
+            <SearchBar>
+              <Search size={16} />
+              <input 
+                placeholder={activeTab === 'my' ? "Search notes..." : "Search shared notes..."}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>
+                  <X size={14} />
+                </button>
+              )}
+            </SearchBar>
+            
+            {/* Category Filter (only for My Notes) */}
+            {activeTab === 'my' && (
+              <CategoryFilter>
+                <CategoryPill 
+                  $active={categoryFilter === null} 
+                  onClick={() => setCategoryFilter(null)}
+                >
+                  All
+                </CategoryPill>
+                {categories.slice(0, 5).map((cat, idx) => (
+                  <CategoryPill 
+                    key={idx}
+                    $active={categoryFilter === idx}
+                    onClick={() => setCategoryFilter(categoryFilter === idx ? null : idx)}
+                  >
+                    {cat}
+                  </CategoryPill>
+                ))}
+              </CategoryFilter>
+            )}
+            
+            {/* New Note Button */}
+            {activeTab === 'my' && (
+              <HeaderRow>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                  {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
+                </span>
+                <NewNoteBtn onClick={handleNewNote} disabled={!isReady}>
+                  <Plus size={16} /> New
+                </NewNoteBtn>
+              </HeaderRow>
+            )}
           </SidebarHeader>
           
           <NotesList>
@@ -1089,40 +1447,88 @@ const CipherNotes = () => {
               <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
                 Initializing FHE...
               </div>
-            ) : notes.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
-                No notes yet
-              </div>
-            ) : notes.map(note => (
-              <NoteItem 
-                key={note.id} 
-                $active={note.id === selectedNoteId}
-                onClick={() => selectNote(note)}
-              >
-                <div className="title">
-                  {contentCache[`my-${note.id}`] ? <Unlock size={14} /> : <Lock size={14} />}
-                  {note.title}
+            ) : activeTab === 'my' ? (
+              filteredNotes.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                  {searchQuery || categoryFilter !== null ? 'No matching notes' : 'No notes yet'}
                 </div>
-                <div className="meta">{formatDate(note.updatedAt)}</div>
-              </NoteItem>
-            ))}
+              ) : filteredNotes.map(note => (
+                <NoteItem 
+                  key={note.id} 
+                  $active={note.id === selectedNoteId && !currentNoteIsShared}
+                  onClick={() => selectNote(note)}
+                >
+                  <div className="title">
+                    {contentCache[`my-${note.id}`] ? <Unlock size={14} /> : <Lock size={14} />}
+                    {note.title}
+                  </div>
+                  <div className="meta">
+                    {formatDate(note.updatedAt)}
+                    {noteCategoryMap[note.id] !== undefined && (
+                      <span className="category-tag">
+                        {categories[noteCategoryMap[note.id]]}
+                      </span>
+                    )}
+                  </div>
+                </NoteItem>
+              ))
+            ) : (
+              filteredSharedNotes.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                  {searchQuery ? 'No matching shared notes' : 'No notes shared with you'}
+                </div>
+              ) : filteredSharedNotes.map((shared, idx) => (
+                <NoteItem 
+                  key={`shared-${idx}`}
+                  $active={selectedSharedNote?.owner === shared.owner && selectedSharedNote?.noteId === shared.noteId}
+                  onClick={() => selectSharedNote(shared)}
+                >
+                  <div className="title">
+                    {contentCache[`shared-${shared.owner}-${shared.noteId}`] ? <Unlock size={14} /> : <Lock size={14} />}
+                    {shared.title}
+                  </div>
+                  <div className="meta">
+                    <span className="shared-by">from {formatAddress(shared.owner)}</span>
+                  </div>
+                </NoteItem>
+              ))
+            )}
           </NotesList>
         </Sidebar>
         
         <EditorArea>
-          {selectedNoteId !== null || isNewNote ? (
+          {selectedNoteId !== null || isNewNote || selectedSharedNote !== null ? (
             <>
               <EditorHeader>
                 <TitleInput 
                   value={title} 
                   onChange={e => setTitle(e.target.value)} 
-                  placeholder="Note title..." 
+                  placeholder="Note title..."
+                  readOnly={currentNoteIsShared}
                 />
                 
-                <ActionBtn $primary onClick={handleSave} disabled={isLoading || !isReady}>
-                  <FileText size={16} />
-                  {isNewNote || isDecrypted ? 'Save' : 'Update Title'}
-                </ActionBtn>
+                {/* Category Selector (only for own notes, not new, not shared) */}
+                {!isNewNote && !currentNoteIsShared && isDecrypted && (
+                  <CategorySelect 
+                    value={selectedNoteCategory}
+                    onChange={e => {
+                      const idx = parseInt(e.target.value);
+                      setSelectedNoteCategory(idx);
+                      handleSetCategory(idx);
+                    }}
+                  >
+                    {categories.map((cat, idx) => (
+                      <option key={idx} value={idx}>{cat}</option>
+                    ))}
+                  </CategorySelect>
+                )}
+                
+                {!currentNoteIsShared && (
+                  <ActionBtn $primary onClick={handleSave} disabled={isLoading || !isReady}>
+                    <FileText size={16} />
+                    {isNewNote || isDecrypted ? 'Save' : 'Update Title'}
+                  </ActionBtn>
+                )}
                 
                 {!isNewNote && (
                   <>
@@ -1131,12 +1537,16 @@ const CipherNotes = () => {
                         <Unlock size={16} /> Decrypt
                       </ActionBtn>
                     )}
-                    <ActionBtn onClick={() => setShowShareModal(true)} disabled={!isDecrypted}>
-                      <Share2 size={16} /> Share
-                    </ActionBtn>
-                    <ActionBtn onClick={handleDelete} disabled={isLoading}>
-                      <Trash2 size={16} />
-                    </ActionBtn>
+                    {!currentNoteIsShared && (
+                      <>
+                        <ActionBtn onClick={() => setShowShareModal(true)} disabled={!isDecrypted}>
+                          <Share2 size={16} /> Share
+                        </ActionBtn>
+                        <ActionBtn $danger onClick={handleDelete} disabled={isLoading}>
+                          <Trash2 size={16} />
+                        </ActionBtn>
+                      </>
+                    )}
                   </>
                 )}
               </EditorHeader>
@@ -1146,7 +1556,7 @@ const CipherNotes = () => {
                   value={content} 
                   onChange={e => setContent(e.target.value)} 
                   placeholder="Write your encrypted note..."
-                  readOnly={!isNewNote && !isDecrypted}
+                  readOnly={currentNoteIsShared || (!isNewNote && !isDecrypted)}
                 />
               </EditorContent>
             </>
@@ -1154,8 +1564,8 @@ const CipherNotes = () => {
             <EmptyState>
               <div className="icon"><FileText size={64} /></div>
               <h3>Select or create a note</h3>
-              <p>Your notes are end-to-end encrypted using FHE technology.</p>
-              {isReady && (
+              <p>Your notes are end-to-end encrypted using Zama FHEVM technology.</p>
+              {isReady && activeTab === 'my' && (
                 <ActionBtn $primary onClick={handleNewNote} style={{ marginTop: '20px' }}>
                   <Plus size={16} /> Create Note
                 </ActionBtn>

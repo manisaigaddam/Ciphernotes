@@ -10,21 +10,102 @@
 
 - **End-to-End Encryption**: Notes encrypted with AES-256-GCM, keys stored on-chain using FHE
 - **Secure Sharing**: Share notes with other addresses via FHE re-encryption
+- **Encrypted Categories**: Organize notes with euint8 encrypted category identifiers
+- **Local Search**: Search across decrypted (cached) note content
 - **IPFS Storage**: Encrypted content stored on IPFS (Storacha), only FHE-encrypted keys on-chain
-- **Full Privacy**: Even the blockchain can't see your note content or encryption keys
 
-## 🔧 FHEVM Operations Showcase
+---
+
+## 🔧 FHE Operations Showcase
 
 This project demonstrates advanced Zama FHEVM patterns:
 
-| Operation | Description |
-|-----------|-------------|
-| `FHE.fromExternal()` | Convert client-encrypted inputs to on-chain handles |
-| `FHE.allowThis()` | Grant contract permission to operate on handles |
-| `FHE.allow()` | Grant user/recipient decryption permission |
-| `FHE.toBytes32()` | Convert handles for storage |
-| `euint64` chunking | Split 256-bit AES keys into 4x64-bit FHE handles |
-| `euint8` categories | Encrypted category identifiers |
+### 1. Key Chunking (euint64 x 4)
+
+256-bit AES keys are split into four 64-bit chunks for FHE encryption:
+
+```solidity
+// CipherNotes.sol - Creating a note with FHE key chunks
+function createNote(
+    string calldata title,
+    bytes calldata ipfsCid,
+    externalEuint64 keyChunk1,  // First 64 bits of AES key
+    externalEuint64 keyChunk2,  // Bits 64-127
+    externalEuint64 keyChunk3,  // Bits 128-191
+    externalEuint64 keyChunk4,  // Final 64 bits
+    bytes calldata inputProof
+) external returns (uint256) {
+    // FHE.fromExternal() converts client-encrypted input to on-chain handle
+    euint64 k = FHE.fromExternal(keyChunk1, inputProof);
+    
+    // FHE.allowThis() grants the contract permission to operate on the handle
+    FHE.allowThis(k);
+    
+    // FHE.allow() grants the user decrypt permission via Gateway
+    FHE.allow(k, msg.sender);
+    
+    note.keyChunk1 = k;
+}
+```
+
+### 2. Note Sharing (FHE Re-encryption)
+
+When sharing, the owner re-encrypts the same AES key for the recipient:
+
+```solidity
+function shareNote(
+    uint256 noteId,
+    address recipient,
+    externalEuint64 k1, k2, k3, k4,
+    bytes calldata inputProof
+) external {
+    euint64 chunk1 = FHE.fromExternal(k1, inputProof);
+    
+    // Grant contract and recipient decrypt permission
+    FHE.allowThis(chunk1);
+    FHE.allow(chunk1, recipient);  // ← Recipient can now decrypt!
+    
+    // Store handle as bytes32 for retrieval
+    sharedNoteKeys[owner][noteId][recipient] = FHE.toBytes32(chunk1);
+}
+```
+
+### 3. Encrypted Categories (euint8)
+
+Categories are stored as encrypted 8-bit integers:
+
+```solidity
+function setNoteCategory(
+    uint256 noteId,
+    externalEuint8 encCategory,  // Encrypted category (0-7)
+    bytes calldata inputProof
+) external {
+    euint8 category = FHE.fromExternal(encCategory, inputProof);
+    FHE.allowThis(category);
+    FHE.allow(category, msg.sender);
+    
+    noteCategories[msg.sender][noteId] = category;
+}
+```
+
+**Why encrypted categories?** Even category assignments are private - no observer can determine which notes belong to which category.
+
+### 4. Client-Side Search
+
+Search happens **locally on decrypted content**, not on-chain FHE comparison:
+
+```javascript
+// Frontend filtering - only searches decrypted (cached) content
+const filteredNotes = notes.filter(note => {
+  const titleMatch = note.title.toLowerCase().includes(query);
+  const contentMatch = contentCache[note.id]?.toLowerCase().includes(query);
+  return titleMatch || contentMatch;
+});
+```
+
+**Why local search?** On-chain FHE string comparison would be astronomically expensive. This is a privacy-preserving pattern.
+
+---
 
 ## 📁 Project Structure
 
@@ -35,10 +116,12 @@ ciphernotes/
 ├── deploy/
 │   └── 01_deploy_ciphernotes.ts # Deployment script
 ├── public/
-│   └── relayer-sdk/             # WASM files for FHE SDK
+│   ├── relayer-sdk/             # WASM files for FHE SDK
+│   ├── kms_lib_bg.wasm          # KMS library
+│   └── tfhe_bg.wasm             # TFHE library
 ├── src/
 │   ├── components/
-│   │   └── CipherNotes.jsx      # Main UI component
+│   │   └── CipherNotes.jsx      # Full UI with search, categories, sharing
 │   ├── config/
 │   │   ├── contracts.js         # Contract ABI & address
 │   │   ├── wagmi.js             # Wallet config
@@ -47,14 +130,14 @@ ciphernotes/
 │   │   └── useFhevm.jsx         # FHE hook with Relayer SDK
 │   ├── lib/
 │   │   └── ipfs.js              # Storacha IPFS integration
-│   ├── styles/
-│   │   └── global.css           # Global styles
-│   ├── App.jsx
-│   └── main.jsx
+│   └── styles/
+│       └── global.css           # Global styles
 ├── .env.example                  # Environment template
 ├── hardhat.config.ts            # Hardhat configuration
 └── package.json
 ```
+
+---
 
 ## 🚀 Quick Start
 
@@ -68,7 +151,7 @@ ciphernotes/
 ### 1. Install Dependencies
 
 ```bash
-npm install
+npm install --legacy-peer-deps
 ```
 
 ### 2. Configure Environment
@@ -85,45 +168,15 @@ VITE_WALLETCONNECT_PROJECT_ID=your_project_id
 ALCHEMY_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
 PRIVATE_KEY=your_private_key_without_0x
 
-# IPFS (Storacha) - see setup guide below
+# Contract (deployed)
+VITE_CIPHERNOTES_ADDRESS=0xB4296466e22d500f68939016C4682D46D9b389B3
+
+# IPFS (Storacha)
 VITE_STORACHA_KEY=your_key
 VITE_STORACHA_PROOF=your_proof
-
-# After deployment
-VITE_CIPHERNOTES_ADDRESS=0x...
 ```
 
-### 3. Setup Storacha (IPFS)
-
-```bash
-# Install Storacha CLI
-npm install -g @storacha/cli
-
-# Login
-storacha login your-email@example.com
-# Check email for verification link
-
-# Create space
-storacha space create ciphernotes-space
-
-# Generate key (save "key" field as VITE_STORACHA_KEY)
-storacha key create --json
-
-# Generate delegation proof (save output as VITE_STORACHA_PROOF)
-storacha delegation create <did-from-key-create> \
-  -c space/blob/add -c space/index/add -c upload/add --base64
-```
-
-### 4. Deploy Contract
-
-```bash
-npm run compile
-npm run deploy:sepolia
-```
-
-Copy the deployed address to `VITE_CIPHERNOTES_ADDRESS` in `.env`
-
-### 5. Run Frontend
+### 3. Run Frontend
 
 ```bash
 npm run dev
@@ -131,59 +184,9 @@ npm run dev
 
 Open http://localhost:5173
 
-## 📋 Environment Variables
+---
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `VITE_WALLETCONNECT_PROJECT_ID` | WalletConnect Cloud project ID | Yes |
-| `ALCHEMY_URL` | Sepolia RPC URL (Alchemy) | Yes |
-| `PRIVATE_KEY` | Deployer wallet private key | For deploy |
-| `VITE_CIPHERNOTES_ADDRESS` | Deployed contract address | Yes |
-| `VITE_STORACHA_KEY` | Storacha agent key | Yes |
-| `VITE_STORACHA_PROOF` | Storacha delegation proof | Yes |
-| `VITE_ACL_ADDRESS` | Zama ACL contract | Pre-configured |
-| `VITE_KMS_ADDRESS` | Zama KMS contract | Pre-configured |
-| `VITE_GATEWAY_URL` | Zama Gateway URL | Pre-configured |
-| `VITE_FHEVM_RELAYER_URL` | Zama Relayer URL | Pre-configured |
-
-## 🔒 How It Works
-
-### Encryption Flow
-
-```
-1. User creates note
-2. Generate AES-256 key locally
-3. Encrypt note content with AES-GCM
-4. Upload encrypted content to IPFS (Storacha)
-5. Split AES key into 4 x 64-bit chunks
-6. FHE encrypt each chunk (client-side via Relayer SDK)
-7. Store IPFS CID + 4 FHE handles on-chain
-```
-
-### Decryption Flow
-
-```
-1. User requests decryption
-2. Fetch IPFS CID + FHE handles from contract
-3. Sign EIP-712 message authorizing decryption
-4. Relayer SDK requests decryption from Gateway
-5. Gateway re-encrypts keys for user's public key
-6. User decrypts key chunks locally
-7. Reconstruct AES key from 4 chunks
-8. Fetch encrypted content from IPFS
-9. Decrypt with AES-GCM
-```
-
-### Sharing Flow
-
-```
-1. Original owner decrypts note (has AES key in memory)
-2. Owner FHE-encrypts same AES key for recipient
-3. Contract stores recipient's FHE handles with FHE.allow()
-4. Recipient can now request decryption via Gateway
-```
-
-## 🏗️ Architecture
+## 🔒 Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -191,28 +194,28 @@ Open http://localhost:5173
 ├─────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
 │  │ React UI     │  │ Relayer SDK  │  │ Web Crypto API   │   │
-│  │ (CipherNotes)│  │ (FHE Client) │  │ (AES-256-GCM)    │   │
-│  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘   │
+│  │ (Search,     │  │ (FHE Client) │  │ (AES-256-GCM)    │   │
+│  │  Categories) │  │              │  │                  │   │
+│  └──────────────┘  └──────────────┘  └──────────────────┘   │
 │         │                 │                   │              │
 │         │    FHE Encrypt  │   AES Encrypt     │              │
 │         ▼                 ▼                   ▼              │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │                    Transaction                        │   │
-│  │  (CID + 4x FHE handles + inputProof)                 │   │
-│  └────────────────────────┬─────────────────────────────┘   │
-└───────────────────────────┼─────────────────────────────────┘
+│  │           Transaction: CID + 4x euint64 handles       │   │
+│  └──────────────────────────────────────────────────────┘   │
+└───────────────────────────────────────────────────────────────┘
                             │
                             ▼
 ┌───────────────────────────────────────────────────────────┐
 │              SEPOLIA CHAIN + FHEVM COPROCESSOR             │
 ├───────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │                  CipherNotes.sol                     │  │
-│  │  - FHE.fromExternal() validates proof               │  │
-│  │  - FHE.allowThis() grants contract permission       │  │
-│  │  - FHE.allow() grants user decrypt permission       │  │
-│  │  - Stores: CID (plain) + 4x euint64 key handles     │  │
-│  └─────────────────────────────────────────────────────┘  │
+│  CipherNotes.sol                                          │
+│  ├── FHE.fromExternal() - Validate encrypted inputs       │
+│  ├── FHE.allowThis()    - Grant contract permission       │
+│  ├── FHE.allow()        - Grant user/recipient permission │
+│  ├── FHE.toBytes32()    - Convert for storage             │
+│  ├── euint64            - 64-bit encrypted key chunks     │
+│  └── euint8             - 8-bit encrypted categories      │
 └───────────────────────────────────────────────────────────┘
                             │
         ┌───────────────────┼───────────────────┐
@@ -223,14 +226,20 @@ Open http://localhost:5173
 └───────────────────┘               └───────────────────────┘
 ```
 
-## 📜 Smart Contract
+---
 
-See [contracts/CipherNotes.sol](contracts/CipherNotes.sol):
+## 📋 Contract Functions
 
-- **Note CRUD**: Create, update, delete notes with encrypted keys
-- **Key Chunking**: 256-bit AES key → 4 x 64-bit FHE handles
-- **Sharing**: Re-encrypt keys for recipients with `FHE.allow()`
-- **Categories**: Encrypted category identifiers (euint8)
+| Function | FHE Operations | Purpose |
+|----------|----------------|---------|
+| `createNote()` | `fromExternal`, `allowThis`, `allow` | Create encrypted note |
+| `updateContent()` | `fromExternal`, `allowThis`, `allow` | Update with new key |
+| `shareNote()` | `fromExternal`, `allowThis`, `allow(recipient)` | Share via re-encryption |
+| `setNoteCategory()` | `fromExternal(euint8)`, `allowThis`, `allow` | Assign encrypted category |
+| `getNoteKeyChunks()` | Returns `euint64[]` | Get handles for decrypt |
+| `getSharedNoteKeyChunks()` | Returns `bytes32[]` | Get shared handles |
+
+---
 
 ## 🛠️ Development
 
@@ -238,15 +247,17 @@ See [contracts/CipherNotes.sol](contracts/CipherNotes.sol):
 # Compile contracts
 npm run compile
 
+# Deploy to Sepolia
+npm run deploy:sepolia
+
 # Run tests
 npm run test
 
 # Build frontend
 npm run build
-
-# Preview production build
-npm run preview
 ```
+
+---
 
 ## 📄 License
 

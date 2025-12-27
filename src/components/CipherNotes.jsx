@@ -1,5 +1,3 @@
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { FileText, FolderOpen, Lock, Plus, Search, Send, Share2, Shield, Tag, Trash2, Unlock, Users, X, Zap } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { useAccount } from 'wagmi';
@@ -9,6 +7,7 @@ import { downloadFromIPFS, uploadToIPFS } from '../lib/ipfs';
 
 // ===================== CRYPTO UTILS =====================
 
+// Generate random AES-256 key
 const generateAESKey = async () => {
   const key = await crypto.subtle.generateKey(
     { name: 'AES-GCM', length: 256 },
@@ -18,11 +17,13 @@ const generateAESKey = async () => {
   return key;
 };
 
+// Export key to raw bytes
 const exportKeyToBytes = async (key) => {
   const raw = await crypto.subtle.exportKey('raw', key);
   return new Uint8Array(raw);
 };
 
+// Import key from raw bytes
 const importKeyFromBytes = async (keyBytes) => {
   return await crypto.subtle.importKey(
     'raw',
@@ -33,6 +34,7 @@ const importKeyFromBytes = async (keyBytes) => {
   );
 };
 
+// AES-GCM encrypt
 const aesEncrypt = async (plaintext, key) => {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
@@ -41,12 +43,14 @@ const aesEncrypt = async (plaintext, key) => {
     key,
     encoded
   );
+  // Combine IV + ciphertext
   const combined = new Uint8Array(iv.length + ciphertext.byteLength);
   combined.set(iv);
   combined.set(new Uint8Array(ciphertext), iv.length);
   return combined;
 };
 
+// AES-GCM decrypt
 const aesDecrypt = async (encryptedData, key) => {
   const iv = encryptedData.slice(0, 12);
   const ciphertext = encryptedData.slice(12);
@@ -58,6 +62,7 @@ const aesDecrypt = async (encryptedData, key) => {
   return new TextDecoder().decode(decrypted);
 };
 
+// Convert 64-bit key chunk to/from BigInt
 const keyChunkToBigInt = (keyBytes, offset = 0) => {
   let value = 0n;
   for (let i = 0; i < 8; i++) {
@@ -75,363 +80,184 @@ const bigIntToKeyChunk = (value) => {
   return bytes;
 };
 
+// ===================== DEFAULT CATEGORIES =====================
+const DEFAULT_CATEGORIES = ['Personal', 'Work', 'Ideas', 'Todo', 'Archive', 'Important', 'Draft', 'Other'];
+
 // ===================== STYLED COMPONENTS =====================
 
 const Container = styled.div`
-  min-height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+  background: #ECE9D8;
+  font-family: 'Tahoma', sans-serif;
+  position: relative;
 `;
 
-const Header = styled.header`
+const MenuBar = styled.div`
+  background: #ECE9D8;
+  border-bottom: 1px solid #ACA899;
+  padding: 2px 4px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(131, 110, 249, 0.2);
+  gap: 2px;
+  font-size: 12px;
 `;
 
-const Logo = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 1.5rem;
-  font-weight: 700;
-  
-  .icon {
-    width: 40px;
-    height: 40px;
-    background: linear-gradient(135deg, #836EF9 0%, #6366f1 100%);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  
-  span {
-    background: linear-gradient(135deg, #836EF9 0%, #a5b4fc 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
+const MenuItem = styled.button`
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  &:hover { background: #316AC5; color: white; }
 `;
 
-const StatusBadge = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: ${props => props.$ready ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)'};
-  border: 1px solid ${props => props.$ready ? 'rgba(16, 185, 129, 0.5)' : 'rgba(245, 158, 11, 0.5)'};
-  border-radius: 20px;
-  font-size: 0.85rem;
-  color: ${props => props.$ready ? '#10b981' : '#f59e0b'};
-  
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: ${props => props.$ready ? 'none' : 'pulse 2s infinite'};
-  }
-`;
-
-const MainLayout = styled.div`
+const MainContent = styled.div`
   flex: 1;
   display: flex;
   overflow: hidden;
-  
-  @media (max-width: 768px) {
-    flex-direction: column;
-  }
 `;
 
-const Sidebar = styled.aside`
-  width: 340px;
-  background: rgba(0, 0, 0, 0.2);
-  border-right: 1px solid rgba(131, 110, 249, 0.1);
+const Sidebar = styled.div`
+  width: 200px;
+  background: #F5F5F5;
+  border-right: 1px solid #ACA899;
   display: flex;
   flex-direction: column;
-  
-  @media (max-width: 768px) {
-    width: 100%;
-    max-height: 250px;
-  }
 `;
 
 const SidebarHeader = styled.div`
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  border-bottom: 1px solid rgba(131, 110, 249, 0.1);
+  background: linear-gradient(to bottom, #4A7EBB 0%, #3C6BA5 100%);
+  color: white;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: bold;
 `;
 
 const TabBar = styled.div`
   display: flex;
-  gap: 4px;
-  background: rgba(0, 0, 0, 0.3);
-  padding: 4px;
-  border-radius: 10px;
+  border-bottom: 1px solid #ACA899;
 `;
 
 const Tab = styled.button`
   flex: 1;
-  padding: 8px 12px;
-  background: ${props => props.$active ? 'linear-gradient(135deg, #836EF9 0%, #6366f1 100%)' : 'transparent'};
+  padding: 4px 8px;
+  background: ${props => props.$active ? '#fff' : '#ECE9D8'};
   border: none;
-  border-radius: 8px;
-  color: ${props => props.$active ? 'white' : '#94a3b8'};
-  font-size: 0.8rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: all 0.2s;
-  
-  &:hover {
-    background: ${props => props.$active ? '' : 'rgba(131, 110, 249, 0.1)'};
-  }
-`;
-
-const SearchBar = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(131, 110, 249, 0.2);
-  border-radius: 8px;
-  
-  input {
-    flex: 1;
-    background: transparent;
-    border: none;
-    color: #f8fafc;
-    font-size: 0.9rem;
-    
-    &:focus { outline: none; }
-    &::placeholder { color: #64748b; }
-  }
-  
-  svg { color: #64748b; }
-`;
-
-const CategoryFilter = styled.div`
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-`;
-
-const CategoryPill = styled.button`
-  padding: 4px 10px;
-  background: ${props => props.$active ? 'rgba(131, 110, 249, 0.3)' : 'rgba(255, 255, 255, 0.05)'};
-  border: 1px solid ${props => props.$active ? '#836EF9' : 'rgba(131, 110, 249, 0.2)'};
-  border-radius: 12px;
-  color: ${props => props.$active ? '#a5b4fc' : '#94a3b8'};
-  font-size: 0.7rem;
-  transition: all 0.2s;
-  
-  &:hover {
-    background: rgba(131, 110, 249, 0.2);
-  }
-`;
-
-const HeaderRow = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-`;
-
-const NewNoteBtn = styled.button`
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: linear-gradient(135deg, #836EF9 0%, #6366f1 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 0.85rem;
-  font-weight: 500;
-  
-  &:hover {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-  
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
+  border-bottom: ${props => props.$active ? '2px solid #316AC5' : 'none'};
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: ${props => props.$active ? 'bold' : 'normal'};
+  &:hover { background: ${props => props.$active ? '#fff' : '#E8E8E8'}; }
 `;
 
 const NotesList = styled.div`
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 4px;
 `;
 
 const NoteItem = styled.div`
-  padding: 12px 16px;
-  border-radius: 8px;
+  padding: 6px 8px;
   cursor: pointer;
-  margin-bottom: 4px;
-  background: ${props => props.$active ? 'rgba(131, 110, 249, 0.2)' : 'transparent'};
-  border: 1px solid ${props => props.$active ? 'rgba(131, 110, 249, 0.5)' : 'transparent'};
-  transition: all 0.2s ease;
-  
-  &:hover {
-    background: rgba(131, 110, 249, 0.1);
-  }
-  
-  .title {
-    font-size: 0.95rem;
-    font-weight: 500;
-    color: #f8fafc;
-    margin-bottom: 4px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  
-  .meta {
-    font-size: 0.75rem;
-    color: #64748b;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  
-  .category-tag {
-    padding: 2px 6px;
-    background: rgba(131, 110, 249, 0.2);
-    border-radius: 4px;
-    font-size: 0.65rem;
-    color: #a5b4fc;
-  }
-  
-  .shared-by {
-    color: #10b981;
-    font-style: italic;
+  border-radius: 2px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: ${props => props.$active ? '#316AC5' : 'transparent'};
+  color: ${props => props.$active ? 'white' : '#000'};
+  &:hover { background: ${props => props.$active ? '#316AC5' : '#E8E8E8'}; }
+  .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .category-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: ${props => props.$categoryColor || '#ccc'};
   }
 `;
 
-const EditorArea = styled.main`
+const NewNoteBtn = styled.button`
+  margin: 4px;
+  padding: 6px 8px;
+  background: linear-gradient(to bottom, #FFFFFF 0%, #E5E5E5 100%);
+  border: 1px solid #ACA899;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  &:hover { background: linear-gradient(to bottom, #E5F3FF 0%, #C7E1FF 100%); border-color: #316AC5; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+`;
+
+const EditorArea = styled.div`
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: rgba(0, 0, 0, 0.1);
+  background: white;
 `;
 
 const EditorHeader = styled.div`
-  padding: 16px 24px;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid rgba(131, 110, 249, 0.1);
+  background: #F0F0F0;
+  border-bottom: 1px solid #D4D0C8;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 `;
 
 const TitleInput = styled.input`
   flex: 1;
-  min-width: 200px;
-  padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(131, 110, 249, 0.3);
-  border-radius: 8px;
-  color: #f8fafc;
-  font-size: 1rem;
-  
-  &:focus {
-    outline: none;
-    border-color: #836EF9;
-    box-shadow: 0 0 0 3px rgba(131, 110, 249, 0.2);
-  }
-  
-  &::placeholder {
-    color: #64748b;
-  }
+  min-width: 150px;
+  padding: 4px 8px;
+  border: 1px solid #7F9DB9;
+  border-radius: 2px;
+  font-size: 12px;
+  &:focus { outline: none; border-color: #316AC5; }
 `;
 
 const CategorySelect = styled.select`
-  padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(131, 110, 249, 0.3);
-  border-radius: 8px;
-  color: #f8fafc;
-  font-size: 0.85rem;
-  cursor: pointer;
-  
-  &:focus {
-    outline: none;
-    border-color: #836EF9;
-  }
-  
-  option {
-    background: #1a1a2e;
-    color: #f8fafc;
-  }
+  padding: 4px 8px;
+  border: 1px solid #7F9DB9;
+  border-radius: 2px;
+  font-size: 11px;
+  background: white;
+  min-width: 100px;
 `;
 
-const ActionBtn = styled.button`
+const EditorTextarea = styled.textarea`
+  flex: 1;
+  padding: 12px;
+  border: none;
+  resize: none;
+  font-family: 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  &:focus { outline: none; }
+`;
+
+const StatusBar = styled.div`
+  background: #ECE9D8;
+  border-top: 1px solid #ACA899;
+  padding: 4px 8px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #444;
+`;
+
+const StatusItem = styled.span`
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  background: ${props => props.$primary 
-    ? 'linear-gradient(135deg, #836EF9 0%, #6366f1 100%)' 
-    : props.$danger 
-    ? 'rgba(239, 68, 68, 0.2)' 
-    : 'rgba(255, 255, 255, 0.05)'};
-  border: 1px solid ${props => props.$primary ? 'transparent' : props.$danger ? 'rgba(239, 68, 68, 0.5)' : 'rgba(131, 110, 249, 0.3)'};
-  border-radius: 8px;
-  color: ${props => props.$danger ? '#ef4444' : 'white'};
-  font-size: 0.85rem;
-  font-weight: 500;
-  
-  &:hover:not(:disabled) {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-  
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
+  gap: 4px;
 `;
 
-const EditorContent = styled.div`
-  flex: 1;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-`;
-
-const ContentTextarea = styled.textarea`
-  flex: 1;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(131, 110, 249, 0.2);
-  border-radius: 12px;
-  color: #f8fafc;
-  font-size: 1rem;
-  font-family: 'Inter', sans-serif;
-  line-height: 1.6;
-  resize: none;
-  
-  &:focus {
-    outline: none;
-    border-color: #836EF9;
-  }
-  
-  &::placeholder {
-    color: #64748b;
-  }
+const EncryptionBadge = styled.span`
+  background: ${props => props.$encrypted ? '#4CAF50' : '#FF9800'};
+  color: white;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: bold;
 `;
 
 const EmptyState = styled.div`
@@ -440,71 +266,66 @@ const EmptyState = styled.div`
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #64748b;
+  color: #666;
   text-align: center;
   padding: 40px;
-  
-  .icon {
-    font-size: 64px;
-    margin-bottom: 20px;
-    opacity: 0.5;
-  }
-  
-  h3 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 8px;
-    color: #94a3b8;
-  }
-  
-  p {
-    font-size: 0.9rem;
-    max-width: 400px;
-  }
+  .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+  h3 { margin: 0 0 8px; font-size: 14px; font-weight: normal; }
+  p { margin: 0; font-size: 12px; opacity: 0.8; }
+`;
+
+const ActionButton = styled.button`
+  padding: 4px 12px;
+  background: linear-gradient(to bottom, #FFFFFF 0%, #E5E5E5 100%);
+  border: 1px solid #ACA899;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  &:hover { background: linear-gradient(to bottom, #E5F3FF 0%, #C7E1FF 100%); border-color: #316AC5; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
 `;
 
 const LoadingOverlay = styled.div`
-  position: fixed;
+  position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(4px);
+  background: rgba(255,255,255,0.95);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  
+  z-index: 100;
   .spinner {
-    width: 48px;
-    height: 48px;
-    border: 3px solid rgba(131, 110, 249, 0.2);
-    border-top: 3px solid #836EF9;
+    width: 32px; height: 32px;
+    border: 3px solid #E0E0E0;
+    border-top: 3px solid #316AC5;
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
-  
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-  
-  h4 {
-    margin-top: 20px;
-    font-size: 1.1rem;
-    color: #f8fafc;
-  }
-  
-  p {
-    margin-top: 8px;
-    font-size: 0.85rem;
-    color: #94a3b8;
-  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  p { margin-top: 12px; font-size: 12px; color: #666; }
+  .step { font-size: 10px; color: #999; margin-top: 4px; }
 `;
 
+const LogPanel = styled.div`
+  background: #1a1a1a;
+  color: #00D4AA;
+  font-family: 'Consolas', monospace;
+  font-size: 10px;
+  padding: 8px;
+  max-height: 100px;
+  overflow-y: auto;
+  border-top: 1px solid #333;
+  .log-entry { margin: 2px 0; }
+  .log-entry.error { color: #FF6B6B; }
+  .log-entry.success { color: #00D4AA; }
+  .log-entry.info { color: #6C9BCF; }
+`;
+
+// Share Modal
 const Modal = styled.div`
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+  background: rgba(0,0,0,0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -512,140 +333,51 @@ const Modal = styled.div`
 `;
 
 const ModalContent = styled.div`
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  border: 1px solid rgba(131, 110, 249, 0.3);
-  border-radius: 16px;
-  padding: 24px;
-  min-width: 400px;
-  max-width: 500px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  background: #ECE9D8;
+  border: 2px solid #0054E3;
+  border-radius: 4px;
+  padding: 16px;
+  min-width: 320px;
+  box-shadow: 4px 4px 8px rgba(0,0,0,0.3);
 `;
 
-const ModalHeader = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  
-  h3 {
-    font-size: 1.1rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  
-  button {
-    padding: 4px;
-    background: none;
-    border: none;
-    color: #94a3b8;
-    
-    &:hover {
-      color: #f8fafc;
-    }
-  }
+const ModalTitle = styled.div`
+  background: linear-gradient(to right, #0054E3, #2E8AEE);
+  color: white;
+  padding: 4px 8px;
+  margin: -16px -16px 12px -16px;
+  font-weight: bold;
+  font-size: 12px;
 `;
 
 const ModalInput = styled.input`
   width: 100%;
-  padding: 12px 16px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(131, 110, 249, 0.3);
-  border-radius: 8px;
-  color: #f8fafc;
-  font-size: 0.95rem;
-  margin-bottom: 16px;
-  
-  &:focus {
-    outline: none;
-    border-color: #836EF9;
-  }
+  padding: 6px 8px;
+  border: 1px solid #7F9DB9;
+  border-radius: 2px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  box-sizing: border-box;
 `;
 
 const ModalButtons = styled.div`
   display: flex;
-  gap: 12px;
+  gap: 8px;
   justify-content: flex-end;
 `;
 
-const LogPanel = styled.div`
-  background: rgba(0, 0, 0, 0.5);
-  border-top: 1px solid rgba(131, 110, 249, 0.2);
-  padding: 12px 24px;
-  max-height: 100px;
-  overflow-y: auto;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
-  
-  .log-entry {
-    padding: 2px 0;
-    color: #64748b;
-    
-    &.success { color: #10b981; }
-    &.error { color: #ef4444; }
-    &.info { color: #6366f1; }
-  }
+const SharedWithBadge = styled.span`
+  background: #E3F2FD;
+  color: #1976D2;
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-size: 9px;
+  margin-left: 4px;
 `;
-
-const FeatureCards = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
-  margin-top: 40px;
-`;
-
-const FeatureCard = styled.div`
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(131, 110, 249, 0.2);
-  border-radius: 12px;
-  padding: 24px;
-  
-  .icon {
-    width: 48px;
-    height: 48px;
-    background: linear-gradient(135deg, rgba(131, 110, 249, 0.2) 0%, rgba(99, 102, 241, 0.2) 100%);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 16px;
-    color: #836EF9;
-  }
-  
-  h4 {
-    font-size: 1rem;
-    margin-bottom: 8px;
-    color: #f8fafc;
-  }
-  
-  p {
-    font-size: 0.85rem;
-    color: #94a3b8;
-    line-height: 1.5;
-  }
-`;
-
-const FHEInfoBox = styled.div`
-  background: rgba(131, 110, 249, 0.1);
-  border: 1px solid rgba(131, 110, 249, 0.3);
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  font-size: 0.8rem;
-  color: #a5b4fc;
-  
-  strong {
-    color: #836EF9;
-  }
-`;
-
-// ===================== DEFAULT CATEGORIES =====================
-
-const DEFAULT_CATEGORIES = ['Personal', 'Work', 'Ideas', 'Important', 'Archive', 'Travel', 'Finance', 'Health'];
 
 // ===================== MAIN COMPONENT =====================
 
-const CipherNotes = () => {
+export const NotepadApp = () => {
   const { isConnected, address } = useAccount();
   const { 
     isReady, isSupportedNetwork, status,
@@ -656,56 +388,67 @@ const CipherNotes = () => {
   
   // Core state
   const [notes, setNotes] = useState([]);
+  const [sharedNotes, setSharedNotes] = useState([]);
   const [selectedNoteId, setSelectedNoteId] = useState(null);
+  const [selectedSharedNote, setSelectedSharedNote] = useState(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [selectedNoteCategory, setSelectedNoteCategory] = useState(0);
+  const [selectedCategory, setSelectedCategory] = useState(0);
   
   // UI state
+  const [activeTab, setActiveTab] = useState('my'); // 'my' | 'shared'
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [loadingStep, setLoadingStep] = useState('');
   const [isNewNote, setIsNewNote] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [showLogs, setShowLogs] = useState(true);
   const [isDecrypted, setIsDecrypted] = useState(false);
-  
-  // Tab state
-  const [activeTab, setActiveTab] = useState('my'); // 'my' | 'shared'
-  
-  // Search & filter
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState(null); // null = all
-  
-  // Categories
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [noteCategoryMap, setNoteCategoryMap] = useState({}); // noteId -> categoryIndex
-  
-  // Shared notes
-  const [sharedNotes, setSharedNotes] = useState([]);
-  const [selectedSharedNote, setSelectedSharedNote] = useState(null); // {owner, noteId}
   
   // Sharing modal
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareRecipient, setShareRecipient] = useState('');
+  const [sharedWithList, setSharedWithList] = useState([]);
   
-  // Caches
+  // Categories
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [noteCategories, setNoteCategories] = useState(() => {
+    // Load from localStorage on init
+    try {
+      const saved = localStorage.getItem('notepad-categories');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  const [filterCategory, setFilterCategory] = useState(-1); // -1 = all
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Local cache for decrypted content AND keys
   const [contentCache, setContentCache] = useState({});
-  const [keyCache, setKeyCache] = useState({});
+  const [keyCache, setKeyCache] = useState({}); // Cache AES key bytes for sharing
   
   const contractAddress = CONTRACT_ADDRESSES?.CipherNotes;
   
   const addLog = (message, type = 'info') => {
-    setLogs(prev => [...prev.slice(-15), { message, type, time: new Date().toLocaleTimeString() }]);
-    console.log(`[CipherNotes ${type}]`, message);
+    setLogs(prev => [...prev.slice(-20), { message, type, time: new Date().toLocaleTimeString() }]);
+    console.log(`[Notepad ${type}]`, message);
   };
+  
+  const CATEGORY_COLORS = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#9C27B0', '#F44336', '#607D8B', '#795548'];
   
   useEffect(() => {
     if (isConnected && isReady && contractAddress) {
       loadNotes();
       loadSharedNotes();
-      loadCategoryNames();
+      loadCategories();
     }
   }, [isConnected, isReady, contractAddress]);
+  
+  // Persist noteCategories to localStorage
+  useEffect(() => {
+    if (Object.keys(noteCategories).length > 0) {
+      localStorage.setItem('notepad-categories', JSON.stringify(noteCategories));
+    }
+  }, [noteCategories]);
   
   const getContractInstance = useCallback(() => {
     if (!contractAddress || !ethersSigner) return null;
@@ -750,35 +493,50 @@ const CipherNotes = () => {
       if (!contract) return;
       
       addLog('Fetching shared notes...');
-      const result = await contract.getReceivedNotes();
+      const [owners, noteIds, titles] = await contract.getReceivedNotes();
       
       const shared = [];
-      for (let i = 0; i < result.owners.length; i++) {
-        if (result.titles[i]) {
+      for (let i = 0; i < owners.length; i++) {
+        if (titles[i]) { // Still shared
           shared.push({
-            owner: result.owners[i],
-            noteId: Number(result.noteIds[i]),
-            title: result.titles[i],
+            owner: owners[i],
+            noteId: Number(noteIds[i]),
+            title: titles[i],
           });
         }
       }
       setSharedNotes(shared);
-      addLog(`Found ${shared.length} shared notes`, 'success');
+      addLog(`Loaded ${shared.length} shared notes`, 'success');
     } catch (error) {
       addLog(`Load shared failed: ${error.message}`, 'error');
     }
   };
   
-  const loadCategoryNames = async () => {
+  const loadCategories = async () => {
+    try {
+      const contract = getContractInstance();
+      if (!contract || !address) return;
+      
+      const names = await contract.getCategoryNames(address);
+      // If all empty, use defaults
+      const hasNames = names.some(n => n && n.length > 0);
+      if (hasNames) {
+        setCategories(names);
+      }
+    } catch (error) {
+      // Categories not set, use defaults
+    }
+  };
+  
+  const loadSharedWithList = async (noteId) => {
     try {
       const contract = getContractInstance();
       if (!contract) return;
       
-      const names = await contract.getCategoryNames(address);
-      const filtered = names.map((n, i) => n || DEFAULT_CATEGORIES[i] || `Category ${i + 1}`);
-      setCategories(filtered);
+      const list = await contract.getSharedWithList(noteId);
+      setSharedWithList(list);
     } catch (error) {
-      addLog(`Load categories failed: ${error.message}`, 'error');
+      setSharedWithList([]);
     }
   };
   
@@ -790,30 +548,33 @@ const CipherNotes = () => {
     setTitle(note.title);
     setIsNewNote(false);
     setIsDecrypted(false);
-    setSelectedNoteCategory(noteCategoryMap[note.id] || 0);
     
-    const cacheKey = `my-${note.id}`;
-    if (contentCache[cacheKey]) {
-      setContent(contentCache[cacheKey]);
+    // Load shared with list
+    await loadSharedWithList(note.id);
+    
+    // Check cache
+    if (contentCache[`my-${note.id}`]) {
+      setContent(contentCache[`my-${note.id}`]);
       setIsDecrypted(true);
     } else {
       setContent('[🔐 Encrypted - Click "Decrypt" to view]');
     }
   };
   
-  const selectSharedNote = async (shared) => {
-    setSelectedSharedNote(shared);
+  const selectSharedNote = async (note) => {
+    setSelectedSharedNote(note);
     setSelectedNoteId(null);
-    setTitle(shared.title);
+    setTitle(note.title + ' (shared)');
     setIsNewNote(false);
     setIsDecrypted(false);
     
-    const cacheKey = `shared-${shared.owner}-${shared.noteId}`;
+    // Check cache
+    const cacheKey = `shared-${note.owner}-${note.noteId}`;
     if (contentCache[cacheKey]) {
       setContent(contentCache[cacheKey]);
       setIsDecrypted(true);
     } else {
-      setContent('[🔐 Shared Note - Click "Decrypt" to view]');
+      setContent('[🔐 Shared note - Click "Decrypt" to view]');
     }
   };
   
@@ -822,9 +583,10 @@ const CipherNotes = () => {
     setSelectedSharedNote(null);
     setTitle('');
     setContent('');
+    setSelectedCategory(0);
     setIsNewNote(true);
     setIsDecrypted(true);
-    setSelectedNoteCategory(0);
+    setSharedWithList([]);
     addLog('Creating new note...');
   };
   
@@ -841,39 +603,48 @@ const CipherNotes = () => {
       setIsLoading(true);
       
       if (isNewNote || isDecrypted) {
+        // Full save with content encryption
         setLoadingMessage('Encrypting & saving...');
         
+        // Step 1: Generate AES-256 key
         setLoadingStep('1/5: Generating AES key...');
         addLog('Generating AES-256 key...');
         const aesKey = await generateAESKey();
         const keyBytes = await exportKeyToBytes(aesKey);
         addLog('AES key generated ✓', 'success');
         
+        // Step 2: AES encrypt content
         setLoadingStep('2/5: AES encrypting content...');
         addLog('Encrypting content with AES-GCM...');
         const encryptedContent = await aesEncrypt(content || '', aesKey);
         addLog(`Encrypted: ${encryptedContent.length} bytes ✓`, 'success');
         
+        // Step 3: Upload to IPFS (via Storacha)
         setLoadingStep('3/5: Uploading to IPFS...');
         addLog('Uploading to Storacha IPFS...');
         const ipfsCid = await uploadToIPFS(encryptedContent);
         addLog(`IPFS CID: ${ipfsCid.toString().slice(0, 20)}... ✓`, 'success');
         
-        setLoadingStep('4/5: FHE encrypting key chunks...');
+        // Step 4: FHE encrypt 4 key chunks (32 bytes = 4 x 8 bytes)
+        setLoadingStep('4/5: FHE encrypting key...');
         addLog('FHE encrypting 4 key chunks (256-bit AES key)...');
         
+        // Split 32-byte key into 4 x 8-byte chunks
         const k1Value = keyChunkToBigInt(keyBytes, 0);
         const k2Value = keyChunkToBigInt(keyBytes, 8);
         const k3Value = keyChunkToBigInt(keyBytes, 16);
         const k4Value = keyChunkToBigInt(keyBytes, 24);
         
+        // FHE encrypt all 4 chunks in single input (required for shared proof)
         const encryptedKeys = await createEncryptedInput4x64(
           k1Value, k2Value, k3Value, k4Value, contractAddress
         );
         addLog('FHE encryption complete ✓', 'success');
         
+        // Step 5: Store on-chain (CID as plain bytes + 4 encrypted key chunks)
         setLoadingStep('5/5: Storing on-chain...');
         
+        // Convert CID to bytes
         const cidBytes = new TextEncoder().encode(ipfsCid.toString());
         
         let actualNoteId;
@@ -890,6 +661,7 @@ const CipherNotes = () => {
           addLog(`TX: ${tx.hash}`);
           const receipt = await tx.wait();
           
+          // Parse NoteCreated event
           const noteCreatedEvent = receipt.logs.find(log => {
             try {
               const parsed = contract.interface.parseLog(log);
@@ -905,6 +677,18 @@ const CipherNotes = () => {
             const total = await contract.getTotalNotes();
             actualNoteId = Number(total) - 1;
           }
+          
+          // Set category if not default
+          if (selectedCategory > 0) {
+            addLog('Setting category...');
+            const encCategory = await createEncryptedInput(selectedCategory, contractAddress, 8);
+            const catTx = await contract.setNoteCategory(actualNoteId, encCategory.handles[0], encCategory.inputProof);
+            await catTx.wait();
+            addLog('Category set ✓', 'success');
+            // Also save to local state for filter to work
+            setNoteCategories(prev => ({ ...prev, [actualNoteId]: selectedCategory }));
+          }
+          
         } else {
           actualNoteId = selectedNoteId;
           addLog('Updating note content on-chain...');
@@ -922,13 +706,17 @@ const CipherNotes = () => {
         addLog('Saved! ✓', 'success');
         
         setContentCache(prev => ({ ...prev, [`my-${actualNoteId}`]: content }));
-        setKeyCache(prev => ({ ...prev, [`my-${actualNoteId}`]: keyBytes }));
         await loadNotes();
         setIsNewNote(false);
         setSelectedNoteId(actualNoteId);
+
+        // Lock the note after saving (user must decrypt to edit again)
+        setIsDecrypted(false);
+        setContent('[🔒 Encrypted - Click Decrypt to view and edit]');
+        
         
       } else {
-        // Just update title
+        // Title-only update
         setLoadingMessage('Updating title...');
         addLog('Updating title...');
         const tx = await contract.updateTitle(selectedNoteId, title);
@@ -951,43 +739,40 @@ const CipherNotes = () => {
     const contract = getContractInstance();
     if (!contract) return;
     
-    const isShared = selectedSharedNote !== null;
-    
     try {
       setIsLoading(true);
       setLoadingMessage('Decrypting...');
       
-      let ipfsCid, keyHandles, cacheKey;
+      let cidBytes, keyHandles, cacheKey;
       
-      if (isShared) {
-        setLoadingStep('1/4: Fetching shared note data...');
-        addLog(`Fetching shared note from ${selectedSharedNote.owner.slice(0, 8)}...`);
+      if (selectedSharedNote) {
+        // Decrypt shared note
+        setLoadingStep('1/4: Fetching shared note CID...');
+        addLog('Fetching shared note from contract...');
         
-        const cidBytes = await contract.getSharedNoteCID(selectedSharedNote.owner, selectedSharedNote.noteId);
-        const keyBytes32 = await contract.getSharedNoteKeyChunks(selectedSharedNote.owner, selectedSharedNote.noteId);
+        cidBytes = await contract.getSharedNoteCID(selectedSharedNote.owner, selectedSharedNote.noteId);
+        const keyChunksBytes32 = await contract.getSharedNoteKeyChunks(selectedSharedNote.owner, selectedSharedNote.noteId);
         
-        keyHandles = keyBytes32; // bytes32 handles for shared
+        // Convert bytes32[4] to handles
+        keyHandles = keyChunksBytes32;
         cacheKey = `shared-${selectedSharedNote.owner}-${selectedSharedNote.noteId}`;
-        
-        ipfsCid = new TextDecoder().decode(
-          new Uint8Array(cidBytes.slice(2).match(/.{1,2}/g).map(b => parseInt(b, 16)))
-        );
       } else {
+        // Decrypt own note
         setLoadingStep('1/4: Fetching CID from contract...');
         addLog('Fetching IPFS CID from contract...');
         
-        const cidBytes = await contract.getNoteCID(selectedNoteId);
+        cidBytes = await contract.getNoteCID(selectedNoteId);
         const chunks = await contract.getNoteKeyChunks(selectedNoteId);
         keyHandles = [chunks[0], chunks[1], chunks[2], chunks[3]];
         cacheKey = `my-${selectedNoteId}`;
-        
-        ipfsCid = new TextDecoder().decode(
-          new Uint8Array(cidBytes.slice(2).match(/.{1,2}/g).map(b => parseInt(b, 16)))
-        );
       }
       
+      const ipfsCid = new TextDecoder().decode(
+        new Uint8Array(cidBytes.slice(2).match(/.{1,2}/g).map(b => parseInt(b, 16)))
+      );
       addLog(`CID: ${ipfsCid.slice(0, 20)}... ✓`, 'success');
       
+      // Step 2: FHE decrypt key chunks
       setLoadingStep('2/4: FHE decrypting key chunks...');
       addLog('Requesting FHE Gateway decryption for 4 key chunks...');
       
@@ -1002,6 +787,7 @@ const CipherNotes = () => {
       
       addLog(`Key chunks: [${decryptedChunks.map(c => c !== null && c !== undefined ? '✓' : '✗').join(',')}]`, 'success');
       
+      // Reconstruct 32-byte AES key from 4 x 8-byte chunks
       const keyBytes = new Uint8Array(32);
       const chunk1 = bigIntToKeyChunk(BigInt(decryptedChunks[0] || 0));
       const chunk2 = bigIntToKeyChunk(BigInt(decryptedChunks[1] || 0));
@@ -1012,12 +798,14 @@ const CipherNotes = () => {
       keyBytes.set(chunk3, 16);
       keyBytes.set(chunk4, 24);
       
+      // Step 3: Fetch encrypted content from IPFS
       setLoadingStep('3/4: Fetching from IPFS...');
       addLog(`Fetching from Storacha: ${ipfsCid.slice(0, 15)}...`);
       
       const encryptedContent = await downloadFromIPFS(ipfsCid);
       addLog(`Downloaded: ${encryptedContent.length} bytes ✓`, 'success');
       
+      // Step 4: AES decrypt
       setLoadingStep('4/4: AES decrypting...');
       addLog('Decrypting with AES-GCM...');
       
@@ -1028,6 +816,7 @@ const CipherNotes = () => {
       setContent(decryptedText);
       setIsDecrypted(true);
       setContentCache(prev => ({ ...prev, [cacheKey]: decryptedText }));
+      // Cache the key bytes for sharing
       setKeyCache(prev => ({ ...prev, [cacheKey]: keyBytes }));
       
     } catch (error) {
@@ -1039,46 +828,12 @@ const CipherNotes = () => {
     }
   };
   
-  // ===================== CATEGORY FUNCTION =====================
-  
-  const handleSetCategory = async (categoryIndex) => {
-    if (selectedNoteId === null || !isReady) return;
-    
-    const contract = getContractInstance();
-    if (!contract) return;
-    
-    try {
-      setIsLoading(true);
-      setLoadingMessage('Setting category...');
-      addLog(`Setting encrypted category ${categoryIndex} for note ${selectedNoteId}...`);
-      
-      // Create encrypted category (euint8)
-      const encrypted = await createEncryptedInput(BigInt(categoryIndex), contractAddress, 'uint8');
-      
-      const tx = await contract.setNoteCategory(
-        selectedNoteId,
-        encrypted.handles[0],
-        encrypted.inputProof
-      );
-      
-      addLog(`TX: ${tx.hash}`);
-      await tx.wait();
-      
-      setNoteCategoryMap(prev => ({ ...prev, [selectedNoteId]: categoryIndex }));
-      setSelectedNoteCategory(categoryIndex);
-      addLog('Category set ✓', 'success');
-    } catch (error) {
-      addLog(`Set category failed: ${error.message}`, 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
   // ===================== SHARE FUNCTION =====================
   
   const handleShare = async () => {
-    if (!shareRecipient || selectedNoteId === null) return;
+    if (!shareRecipient || !selectedNoteId) return;
     
+    // Validate address
     if (!/^0x[a-fA-F0-9]{40}$/.test(shareRecipient)) {
       alert('Invalid Ethereum address');
       return;
@@ -1096,12 +851,14 @@ const CipherNotes = () => {
       setIsLoading(true);
       setLoadingMessage('Sharing note...');
       
+      // First, we need the AES key - user must have decrypted the note
       if (!isDecrypted) {
         alert('Please decrypt the note first before sharing');
         setIsLoading(false);
         return;
       }
       
+      // Get the cached AES key bytes
       const cacheKey = `my-${selectedNoteId}`;
       const keyBytes = keyCache[cacheKey];
       
@@ -1113,18 +870,21 @@ const CipherNotes = () => {
       
       addLog(`Sharing note ${selectedNoteId} with ${shareRecipient.slice(0, 8)}...`);
       
-      setLoadingStep('1/2: FHE encrypting key for recipient...');
+      setLoadingStep('1/3: Encrypting key for recipient...');
       
+      // Use the SAME AES key that was used to encrypt the content
+      // Split into 4 chunks
       const k1Value = keyChunkToBigInt(keyBytes, 0);
       const k2Value = keyChunkToBigInt(keyBytes, 8);
       const k3Value = keyChunkToBigInt(keyBytes, 16);
       const k4Value = keyChunkToBigInt(keyBytes, 24);
       
+      // FHE encrypt for recipient (same key, but recipient can decrypt)
       const encryptedKeys = await createEncryptedInput4x64(
         k1Value, k2Value, k3Value, k4Value, contractAddress
       );
       
-      setLoadingStep('2/2: Storing shared keys on-chain...');
+      setLoadingStep('2/3: Storing shared keys on-chain...');
       addLog('Calling shareNote on contract...');
       
       const tx = await contract.shareNote(
@@ -1138,10 +898,12 @@ const CipherNotes = () => {
       addLog(`TX: ${tx.hash}`);
       await tx.wait();
       
+      setLoadingStep('3/3: Complete!');
       addLog(`Note shared with ${shareRecipient.slice(0, 8)}... ✓`, 'success');
       
       setShowShareModal(false);
       setShareRecipient('');
+      await loadSharedWithList(selectedNoteId);
       
     } catch (error) {
       addLog(`Share failed: ${error.message}`, 'error');
@@ -1155,7 +917,7 @@ const CipherNotes = () => {
   // ===================== DELETE FUNCTION =====================
   
   const handleDelete = async () => {
-    if (selectedNoteId === null || !confirm('Delete this note?')) return;
+    if (selectedNoteId === null || !confirm('Delete?')) return;
     const contract = getContractInstance();
     if (!contract) return;
     
@@ -1181,409 +943,274 @@ const CipherNotes = () => {
     }
   };
   
-  // ===================== FILTERING =====================
+  // ===================== CATEGORY FUNCTION =====================
   
-  const filteredNotes = notes.filter(note => {
-    // Search filter (only on decrypted/cached content + title)
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      const titleMatch = note.title.toLowerCase().includes(query);
-      const contentMatch = contentCache[`my-${note.id}`]?.toLowerCase().includes(query);
-      if (!titleMatch && !contentMatch) return false;
-    }
+  const handleSetCategory = async (category) => {
+    if (selectedNoteId === null) return;
     
-    // Category filter
-    if (categoryFilter !== null) {
-      const noteCategory = noteCategoryMap[note.id];
-      if (noteCategory !== categoryFilter) return false;
-    }
+    const contract = getContractInstance();
+    if (!contract) return;
     
-    return true;
-  });
-  
-  const filteredSharedNotes = sharedNotes.filter(shared => {
-    if (searchQuery) {
-      return shared.title.toLowerCase().includes(searchQuery.toLowerCase());
+    try {
+      setIsLoading(true);
+      setLoadingMessage('Setting category...');
+      
+      addLog(`Setting category ${category} for note ${selectedNoteId}...`);
+      
+      // FHE encrypt category (8-bit)
+      const encCategory = await createEncryptedInput(category, contractAddress, 8);
+      
+      const tx = await contract.setNoteCategory(
+        selectedNoteId,
+        encCategory.handles[0],
+        encCategory.inputProof
+      );
+      
+      await tx.wait();
+      addLog('Category set ✓', 'success');
+      
+      setNoteCategories(prev => ({ ...prev, [selectedNoteId]: category }));
+      
+    } catch (error) {
+      addLog(`Set category failed: ${error.message}`, 'error');
+    } finally {
+      setIsLoading(false);
     }
-    return true;
-  });
+  };
   
   // ===================== RENDER =====================
   
-  const formatDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString('en-US', { 
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-  }) : '';
+  const formatDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  const selectedNote = notes.find(n => n.id === selectedNoteId);
   
-  const formatAddress = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
-  
-  // Welcome screen for not connected
-  if (!isConnected) {
-    return (
-      <Container>
-        <Header>
-          <Logo>
-            <div className="icon">
-              <Shield size={24} />
-            </div>
-            <span>CipherNotes</span>
-          </Logo>
-          <ConnectButton />
-        </Header>
-        
-        <EditorArea>
-          <EmptyState>
-            <div className="icon">🔐</div>
-            <h3>FHE-Powered Private Notes</h3>
-            <p>
-              Create, encrypt, and share notes with fully homomorphic encryption. 
-              Your content stays encrypted on-chain, only you (and those you share with) can read it.
-            </p>
-            
-            <FeatureCards>
-              <FeatureCard>
-                <div className="icon"><Lock size={24} /></div>
-                <h4>End-to-End Encryption</h4>
-                <p>Notes are encrypted with AES-256, and the key is stored on-chain using FHE (4x euint64 chunks).</p>
-              </FeatureCard>
-              
-              <FeatureCard>
-                <div className="icon"><Share2 size={24} /></div>
-                <h4>Secure Sharing</h4>
-                <p>Share notes via FHE re-encryption. Contract uses FHE.allow() to grant decrypt permission to recipients.</p>
-              </FeatureCard>
-              
-              <FeatureCard>
-                <div className="icon"><Tag size={24} /></div>
-                <h4>Encrypted Categories</h4>
-                <p>Organize notes with euint8 encrypted categories. Even category assignments are private!</p>
-              </FeatureCard>
-              
-              <FeatureCard>
-                <div className="icon"><Zap size={24} /></div>
-                <h4>IPFS + On-Chain</h4>
-                <p>Encrypted content on IPFS via Storacha. Only FHE-encrypted key handles stored on-chain.</p>
-              </FeatureCard>
-            </FeatureCards>
-          </EmptyState>
-        </EditorArea>
-      </Container>
-    );
-  }
-  
-  // Wrong network
-  if (!isSupportedNetwork) {
-    return (
-      <Container>
-        <Header>
-          <Logo>
-            <div className="icon"><Shield size={24} /></div>
-            <span>CipherNotes</span>
-          </Logo>
-          <ConnectButton />
-        </Header>
-        
-        <EditorArea>
-          <EmptyState>
-            <div className="icon">⚠️</div>
-            <h3>Switch to Sepolia</h3>
-            <p>CipherNotes runs on Sepolia testnet where Zama FHEVM is deployed.</p>
-          </EmptyState>
-        </EditorArea>
-      </Container>
-    );
-  }
-  
-  // Contract not configured
-  if (!contractAddress) {
-    return (
-      <Container>
-        <Header>
-          <Logo>
-            <div className="icon"><Shield size={24} /></div>
-            <span>CipherNotes</span>
-          </Logo>
-          <ConnectButton />
-        </Header>
-        
-        <EditorArea>
-          <EmptyState>
-            <div className="icon">📝</div>
-            <h3>Contract Not Configured</h3>
-            <p>Set VITE_CIPHERNOTES_ADDRESS in your .env file.</p>
-          </EmptyState>
-        </EditorArea>
-      </Container>
-    );
-  }
-  
-  const currentNoteIsShared = selectedSharedNote !== null;
+  if (!isConnected) return <Container><EmptyState><div className="icon">🔌</div><h3>Connect Wallet</h3></EmptyState></Container>;
+  if (!isSupportedNetwork) return <Container><EmptyState><div className="icon">⚠️</div><h3>Switch to Sepolia</h3></EmptyState></Container>;
+  if (!contractAddress) return <Container><EmptyState><div className="icon">📝</div><h3>Contract not configured</h3><p style={{ fontFamily: 'monospace', fontSize: 10, marginTop: 8 }}>VITE_CIPHERNOTES_ADDRESS=0x...</p></EmptyState></Container>;
   
   return (
     <Container>
       {isLoading && (
         <LoadingOverlay>
           <div className="spinner" />
-          <h4>{loadingMessage}</h4>
-          {loadingStep && <p>{loadingStep}</p>}
+          <p>{loadingMessage}</p>
+          {loadingStep && <p className="step">{loadingStep}</p>}
         </LoadingOverlay>
       )}
       
+      {/* Share Modal */}
       {showShareModal && (
         <Modal onClick={() => setShowShareModal(false)}>
           <ModalContent onClick={e => e.stopPropagation()}>
-            <ModalHeader>
-              <h3><Share2 size={18} /> Share Note</h3>
-              <button onClick={() => setShowShareModal(false)}>
-                <X size={18} />
-              </button>
-            </ModalHeader>
-            
-            <FHEInfoBox>
-              <strong>FHE Re-encryption:</strong> The AES key will be FHE-encrypted for the recipient. 
-              The contract calls <code>FHE.allow(keyHandle, recipient)</code> to grant decrypt permission.
-            </FHEInfoBox>
-            
-            <p style={{ fontSize: '0.9rem', marginBottom: '16px', color: '#94a3b8' }}>
-              Enter recipient's Ethereum address:
-            </p>
+            <ModalTitle>🔗 Share Note</ModalTitle>
+            <p style={{ fontSize: 11, marginBottom: 12 }}>Enter recipient's Ethereum address:</p>
             <ModalInput
               placeholder="0x..."
               value={shareRecipient}
               onChange={e => setShareRecipient(e.target.value)}
             />
+            {sharedWithList.length > 0 && (
+              <div style={{ marginBottom: 12, fontSize: 10 }}>
+                <strong>Already shared with:</strong>
+                {sharedWithList.map(addr => (
+                  <div key={addr} style={{ color: '#666' }}>{addr.slice(0, 8)}...{addr.slice(-6)}</div>
+                ))}
+              </div>
+            )}
             <ModalButtons>
-              <ActionBtn onClick={() => setShowShareModal(false)}>Cancel</ActionBtn>
-              <ActionBtn $primary onClick={handleShare} disabled={!shareRecipient}>
-                <Send size={16} /> Share
-              </ActionBtn>
+              <ActionButton onClick={() => setShowShareModal(false)}>Cancel</ActionButton>
+              <ActionButton onClick={handleShare} disabled={!shareRecipient}>Share</ActionButton>
             </ModalButtons>
           </ModalContent>
         </Modal>
       )}
       
-      <Header>
-        <Logo>
-          <div className="icon">
-            <Shield size={24} />
-          </div>
-          <span>CipherNotes</span>
-        </Logo>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <StatusBadge $ready={isReady}>
-            <span className="dot" />
-            {isReady ? 'FHE Ready' : status}
-          </StatusBadge>
-          <ConnectButton />
-        </div>
-      </Header>
+      <MenuBar>
+        <MenuItem onClick={handleNewNote}>New</MenuItem>
+        <MenuItem onClick={() => setShowLogs(!showLogs)}>{showLogs ? 'Hide' : 'Show'} Logs</MenuItem>
+        <MenuItem onClick={() => { loadNotes(); loadSharedNotes(); }}>Refresh</MenuItem>
+      </MenuBar>
       
-      <MainLayout>
+      <MainContent>
         <Sidebar>
-          <SidebarHeader>
-            {/* Tab Switcher */}
-            <TabBar>
-              <Tab $active={activeTab === 'my'} onClick={() => setActiveTab('my')}>
-                <FolderOpen size={14} />
-                My Notes ({notes.length})
-              </Tab>
-              <Tab $active={activeTab === 'shared'} onClick={() => setActiveTab('shared')}>
-                <Users size={14} />
-                Shared ({sharedNotes.length})
-              </Tab>
-            </TabBar>
-            
-            {/* Search Bar */}
-            <SearchBar>
-              <Search size={16} />
-              <input 
-                placeholder={activeTab === 'my' ? "Search notes..." : "Search shared notes..."}
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>
-                  <X size={14} />
-                </button>
-              )}
-            </SearchBar>
-            
-            {/* Category Filter (only for My Notes) */}
-            {activeTab === 'my' && (
-              <CategoryFilter>
-                <CategoryPill 
-                  $active={categoryFilter === null} 
-                  onClick={() => setCategoryFilter(null)}
-                >
-                  All
-                </CategoryPill>
-                {categories.slice(0, 5).map((cat, idx) => (
-                  <CategoryPill 
-                    key={idx}
-                    $active={categoryFilter === idx}
-                    onClick={() => setCategoryFilter(categoryFilter === idx ? null : idx)}
-                  >
-                    {cat}
-                  </CategoryPill>
-                ))}
-              </CategoryFilter>
-            )}
-            
-            {/* New Note Button */}
-            {activeTab === 'my' && (
-              <HeaderRow>
-                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                  {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
-                </span>
-                <NewNoteBtn onClick={handleNewNote} disabled={!isReady}>
-                  <Plus size={16} /> New
-                </NewNoteBtn>
-              </HeaderRow>
-            )}
-          </SidebarHeader>
+          <TabBar>
+            <Tab $active={activeTab === 'my'} onClick={() => setActiveTab('my')}>📁 My Notes</Tab>
+            <Tab $active={activeTab === 'shared'} onClick={() => setActiveTab('shared')}>📨 Shared</Tab>
+          </TabBar>
           
-          <NotesList>
-            {!isReady ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
-                Initializing FHE...
+          {activeTab === 'my' && (
+            <>
+              <SidebarHeader>📁 My Notes ({notes.length})</SidebarHeader>
+              <NewNoteBtn onClick={handleNewNote} disabled={!isReady}>➕ New Note</NewNoteBtn>
+              {/* Search Input */}
+              <div style={{ padding: '4px 8px' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search notes..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '4px 8px',
+                    border: '1px solid #7F9DB9',
+                    borderRadius: '2px',
+                    fontSize: '11px',
+                    boxSizing: 'border-box'
+                  }}
+                />
               </div>
-            ) : activeTab === 'my' ? (
-              filteredNotes.length === 0 ? (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
-                  {searchQuery || categoryFilter !== null ? 'No matching notes' : 'No notes yet'}
-                </div>
-              ) : filteredNotes.map(note => (
-                <NoteItem 
-                  key={note.id} 
-                  $active={note.id === selectedNoteId && !currentNoteIsShared}
-                  onClick={() => selectNote(note)}
+              {/* Category Filter */}
+              <div style={{ padding: '0 8px 4px' }}>
+                <CategorySelect 
+                  value={filterCategory}
+                  onChange={e => setFilterCategory(parseInt(e.target.value))}
+                  style={{ width: '100%' }}
                 >
-                  <div className="title">
-                    {contentCache[`my-${note.id}`] ? <Unlock size={14} /> : <Lock size={14} />}
-                    {note.title}
-                  </div>
-                  <div className="meta">
-                    {formatDate(note.updatedAt)}
-                    {noteCategoryMap[note.id] !== undefined && (
-                      <span className="category-tag">
-                        {categories[noteCategoryMap[note.id]]}
-                      </span>
-                    )}
-                  </div>
-                </NoteItem>
-              ))
-            ) : (
-              filteredSharedNotes.length === 0 ? (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
-                  {searchQuery ? 'No matching shared notes' : 'No notes shared with you'}
-                </div>
-              ) : filteredSharedNotes.map((shared, idx) => (
-                <NoteItem 
-                  key={`shared-${idx}`}
-                  $active={selectedSharedNote?.owner === shared.owner && selectedSharedNote?.noteId === shared.noteId}
-                  onClick={() => selectSharedNote(shared)}
-                >
-                  <div className="title">
-                    {contentCache[`shared-${shared.owner}-${shared.noteId}`] ? <Unlock size={14} /> : <Lock size={14} />}
-                    {shared.title}
-                  </div>
-                  <div className="meta">
-                    <span className="shared-by">from {formatAddress(shared.owner)}</span>
-                  </div>
-                </NoteItem>
-              ))
-            )}
-          </NotesList>
+                  <option value={-1}>📂 All Categories</option>
+                  {categories.map((cat, i) => (
+                    <option key={i} value={i}>
+                      {cat} ({notes.filter(n => noteCategories[n.id] === i).length})
+                    </option>
+                  ))}
+                </CategorySelect>
+              </div>
+              <NotesList>
+                {!isReady ? (
+                  <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: '#666' }}>FHE: {status}</div>
+                ) : notes.length === 0 ? (
+                  <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: '#666' }}>No notes yet</div>
+                ) : notes
+                    .filter(note => {
+                      // Category filter
+                      if (filterCategory !== -1 && noteCategories[note.id] !== filterCategory) return false;
+                      // Search filter (title or cached content)
+                      if (searchQuery) {
+                        const q = searchQuery.toLowerCase();
+                        const titleMatch = note.title.toLowerCase().includes(q);
+                        const contentMatch = contentCache[`my-${note.id}`]?.toLowerCase().includes(q);
+                        if (!titleMatch && !contentMatch) return false;
+                      }
+                      return true;
+                    })
+                    .map(note => (
+                  <NoteItem 
+                    key={note.id} 
+                    $active={note.id === selectedNoteId} 
+                    $categoryColor={CATEGORY_COLORS[noteCategories[note.id] || 0]}
+                    onClick={() => selectNote(note)}
+                  >
+                    <span className="category-dot" />
+                    <span className="title">{note.title}</span>
+                    <span>{contentCache[`my-${note.id}`] ? '🔓' : '🔒'}</span>
+                  </NoteItem>
+                ))}
+              </NotesList>
+            </>
+          )}
+          
+          {activeTab === 'shared' && (
+            <>
+              <SidebarHeader>📨 Shared With Me ({sharedNotes.length})</SidebarHeader>
+              <NotesList>
+                {sharedNotes.length === 0 ? (
+                  <div style={{ padding: 12, textAlign: 'center', fontSize: 11, color: '#666' }}>No shared notes</div>
+                ) : sharedNotes.map((note, i) => (
+                  <NoteItem 
+                    key={i} 
+                    $active={selectedSharedNote?.owner === note.owner && selectedSharedNote?.noteId === note.noteId}
+                    onClick={() => selectSharedNote(note)}
+                  >
+                    <span>📄</span>
+                    <span className="title">{note.title}</span>
+                    <span style={{ fontSize: 9, color: '#666' }}>{note.owner.slice(0, 6)}...</span>
+                  </NoteItem>
+                ))}
+              </NotesList>
+            </>
+          )}
         </Sidebar>
         
         <EditorArea>
-          {selectedNoteId !== null || isNewNote || selectedSharedNote !== null ? (
+          {selectedNoteId !== null || selectedSharedNote || isNewNote ? (
             <>
               <EditorHeader>
                 <TitleInput 
                   value={title} 
                   onChange={e => setTitle(e.target.value)} 
-                  placeholder="Note title..."
-                  readOnly={currentNoteIsShared}
+                  placeholder="Title..." 
+                  readOnly={!!selectedSharedNote}
                 />
-                
-                {/* Category Selector (only for own notes, not new, not shared) */}
-                {!isNewNote && !currentNoteIsShared && isDecrypted && (
+                {(isNewNote || selectedNoteId !== null) && !selectedSharedNote && (
                   <CategorySelect 
-                    value={selectedNoteCategory}
+                    value={selectedCategory}
                     onChange={e => {
-                      const idx = parseInt(e.target.value);
-                      setSelectedNoteCategory(idx);
-                      handleSetCategory(idx);
+                      const cat = parseInt(e.target.value);
+                      setSelectedCategory(cat);
+                      if (!isNewNote && selectedNoteId !== null) {
+                        handleSetCategory(cat);
+                      }
                     }}
                   >
-                    {categories.map((cat, idx) => (
-                      <option key={idx} value={idx}>{cat}</option>
+                    {categories.map((cat, i) => (
+                      <option key={i} value={i}>{cat}</option>
                     ))}
                   </CategorySelect>
                 )}
-                
-                {!currentNoteIsShared && (
-                  <ActionBtn $primary onClick={handleSave} disabled={isLoading || !isReady}>
-                    <FileText size={16} />
-                    {isNewNote || isDecrypted ? 'Save' : 'Update Title'}
-                  </ActionBtn>
+                {!selectedSharedNote && (
+                  <ActionButton onClick={handleSave} disabled={isLoading || !isReady}>
+                    💾 {isNewNote || isDecrypted ? 'Save' : 'Update Title'}
+                  </ActionButton>
                 )}
-                
                 {!isNewNote && (
                   <>
-                    {!isDecrypted && (
-                      <ActionBtn onClick={handleDecrypt} disabled={isLoading}>
-                        <Unlock size={16} /> Decrypt
-                      </ActionBtn>
-                    )}
-                    {!currentNoteIsShared && (
+                    {!isDecrypted && <ActionButton onClick={handleDecrypt} disabled={isLoading}>🔓 Decrypt</ActionButton>}
+                    {!selectedSharedNote && (
                       <>
-                        <ActionBtn onClick={() => setShowShareModal(true)} disabled={!isDecrypted}>
-                          <Share2 size={16} /> Share
-                        </ActionBtn>
-                        <ActionBtn $danger onClick={handleDelete} disabled={isLoading}>
-                          <Trash2 size={16} />
-                        </ActionBtn>
+                        <ActionButton onClick={() => setShowShareModal(true)} disabled={isLoading || !isDecrypted}>
+                          🔗 Share
+                        </ActionButton>
+                        <ActionButton onClick={handleDelete} disabled={isLoading}>🗑️</ActionButton>
                       </>
                     )}
                   </>
                 )}
+                {sharedWithList.length > 0 && (
+                  <SharedWithBadge>Shared: {sharedWithList.length}</SharedWithBadge>
+                )}
               </EditorHeader>
-              
-              <EditorContent>
-                <ContentTextarea 
-                  value={content} 
-                  onChange={e => setContent(e.target.value)} 
-                  placeholder="Write your encrypted note..."
-                  readOnly={currentNoteIsShared || (!isNewNote && !isDecrypted)}
-                />
-              </EditorContent>
+              <EditorTextarea 
+                value={content} 
+                onChange={e => setContent(e.target.value)} 
+                placeholder="Write your note..."
+                readOnly={(!isNewNote && !isDecrypted) || !!selectedSharedNote}
+              />
             </>
           ) : (
             <EmptyState>
-              <div className="icon"><FileText size={64} /></div>
+              <div className="icon">📝</div>
               <h3>Select or create a note</h3>
-              <p>Your notes are end-to-end encrypted using Zama FHEVM technology.</p>
-              {isReady && activeTab === 'my' && (
-                <ActionBtn $primary onClick={handleNewNote} style={{ marginTop: '20px' }}>
-                  <Plus size={16} /> Create Note
-                </ActionBtn>
-              )}
+              {isReady && <p style={{ color: '#4CAF50' }}>✓ FHE Ready</p>}
             </EmptyState>
           )}
         </EditorArea>
-      </MainLayout>
+      </MainContent>
       
-      <LogPanel>
-        {logs.map((log, i) => (
-          <div key={i} className={`log-entry ${log.type}`}>
-            [{log.time}] {log.message}
-          </div>
-        ))}
-      </LogPanel>
+      {showLogs && (
+        <LogPanel>
+          {logs.map((log, i) => (
+            <div key={i} className={`log-entry ${log.type}`}>[{log.time}] {log.message}</div>
+          ))}
+        </LogPanel>
+      )}
+      
+      <StatusBar>
+        <StatusItem>
+          <EncryptionBadge $encrypted={isReady}>{isReady ? '🔐 FHE Ready' : `⏳ ${status}`}</EncryptionBadge>
+        </StatusItem>
+        <StatusItem>{isDecrypted ? '✏️ Editing' : '🔒 Encrypted'}</StatusItem>
+        <StatusItem>{selectedNote ? formatDate(selectedNote.updatedAt) : ''}</StatusItem>
+      </StatusBar>
     </Container>
   );
 };
 
-export default CipherNotes;
+export default NotepadApp;
